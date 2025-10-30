@@ -1,0 +1,18 @@
+fastapi==0.110.0
+uvicorn[standard]==0.29.0
+pydantic==2.7.4
+python-dotenv==1.0.1
+python-multipart==0.0.9
+
+# Harmonized LangChain ecosystem
+langchain==0.3.7
+langchain-core==0.3.39
+langchain-community==0.3.6
+langgraph==0.2.20
+langchain-google-genai==2.0.5  # Updated for better finish_reason handling
+
+# Real MCP SDK - spawns tool servers via stdio/subprocess
+mcp>=1.0.0
+
+# HTTP Client (for external APIs, not MCP)
+httpx==0.27.0
