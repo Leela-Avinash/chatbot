@@ -155,12 +155,15 @@ export const streamMessage = async (req, res, next) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no'); // Disable proxy buffering
+    res.flushHeaders();  // Flush headers immediately to establish connection
     
     let fullResponse = '';
     let toolCalls = [];
     let artifacts = [];
     let weatherData = null;
     let documentRefs = [];  // Store document references
+    let currentDocumentContent = '';  // Accumulate streaming document content
+    let currentDocumentMetadata = null;  // Store document metadata
     
     try {
       // Forward to LangGraph agent with streaming
@@ -209,33 +212,49 @@ export const streamMessage = async (req, res, next) => {
                 }
                 
                 // Capture completed document artifacts
-                if (data.tool === 'create_document' && data.action === 'complete' && data.result) {
-                  console.log('📄 Document completion event received:', {
-                    title: data.result.title,
-                    kind: data.result.kind,
-                    contentLength: data.result.content?.length
-                  });
-                  
-                  const docArtifact = {
-                    type: data.result.kind || data.result.doc_type || 'text',
-                    title: data.result.title || 'Document',
-                    content: data.result.content || '',
-                    kind: data.result.kind || data.result.doc_type,
-                    createdAt: new Date(),
-                  };
-                  artifacts.push(docArtifact);
-                  
-                  // Store minimal reference for the message
-                  documentRefs.push({
-                    title: docArtifact.title,
-                    type: docArtifact.type,
-                    kind: docArtifact.kind,
-                    createdAt: docArtifact.createdAt,
-                    // We'll save the full document to Document collection later
-                    content: docArtifact.content,
-                  });
-                  
-                  console.log('✓ Document artifact captured:', data.result.title, '- Refs count:', documentRefs.length);
+                if (data.tool === 'create_document') {
+                  if (data.action === 'start') {
+                    // Reset document content accumulator
+                    currentDocumentContent = '';
+                    currentDocumentMetadata = {
+                      title: data.title || 'Document',
+                      type: data.type || 'text',
+                    };
+                    console.log('📄 Document stream started:', currentDocumentMetadata);
+                  } else if (data.action === 'stream' && data.chunk) {
+                    // Accumulate document content as it streams
+                    currentDocumentContent += data.chunk;
+                  } else if (data.action === 'complete' && data.result) {
+                    console.log('📄 Document completion event received:', {
+                      title: data.result.title,
+                      kind: data.result.kind,
+                      accumulatedContentLength: currentDocumentContent.length
+                    });
+                    
+                    const docArtifact = {
+                      type: data.result.kind || data.result.doc_type || 'text',
+                      title: data.result.title || 'Document',
+                      content: currentDocumentContent,  // Use accumulated content
+                      kind: data.result.kind || data.result.doc_type,
+                      createdAt: new Date(),
+                    };
+                    artifacts.push(docArtifact);
+                    
+                    // Store minimal reference for the message
+                    documentRefs.push({
+                      title: docArtifact.title,
+                      type: docArtifact.type,
+                      kind: docArtifact.kind,
+                      createdAt: docArtifact.createdAt,
+                      content: docArtifact.content,  // Now has the full accumulated content
+                    });
+                    
+                    console.log('✓ Document artifact captured:', data.result.title, '- Content length:', currentDocumentContent.length, '- Refs count:', documentRefs.length);
+                    
+                    // Reset for next document
+                    currentDocumentContent = '';
+                    currentDocumentMetadata = null;
+                  }
                 }
               } else if (data.type === 'artifact' || data.artifact) {
                 // Artifact event

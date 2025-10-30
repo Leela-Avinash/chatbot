@@ -291,6 +291,7 @@ export const Chat = () => {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let fullText = '';
+            let fullDocumentContent = ''; // Track document content during streaming
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -331,6 +332,9 @@ export const Chat = () => {
 
                                 if (data.tool === 'create_document') {
                                     if (data.action === 'start') {
+                                        // Reset document content counter
+                                        fullDocumentContent = '';
+                                        
                                         // Clear the artifact panel for new document
                                         dispatch(setCurrentArtifact({
                                             type: data.type || 'text',
@@ -342,17 +346,20 @@ export const Chat = () => {
                                         // DON'T add placeholder text - it's not needed
                                         // The document will appear in the document card when complete
                                     } else if (data.action === 'stream') {
+                                        // Accumulate document content
+                                        fullDocumentContent += data.chunk;
                                         dispatch(appendArtifactContent(data.chunk));
                                     } else if (data.action === 'complete' && data.result) {
                                         console.log('📄 Document complete event:', {
                                             title: data.result.title,
-                                            type: data.result.kind
+                                            type: data.result.kind,
+                                            contentLength: fullDocumentContent.length
                                         });
                                         
                                         const completedDocument = {
                                             type: data.result.kind || data.result.doc_type || 'text',
                                             title: data.result.title || 'Document',
-                                            content: data.result.content || '',
+                                            content: fullDocumentContent, // Use accumulated content
                                             kind: data.result.kind || data.result.doc_type,
                                             status: 'complete',
                                         };

@@ -47,13 +47,13 @@ export const Login = () => {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-blue-50 to-indigo-100">
-            <div className="max-w-md w-full bg-white rounded-lg shadow-xl p-8">
+        <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#1a1a1a' }}>
+            <div className="max-w-md w-full rounded-lg shadow-xl p-8" style={{ backgroundColor: '#2d2d2d', borderColor: '#404040', border: '1px solid #404040' }}>
                 <div className="text-center mb-8">
-                    <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                    <h1 className="text-3xl font-bold text-white mb-2">
                         AI Chatbot
                     </h1>
-                    <p className="text-gray-600">
+                    <p className="text-gray-300">
                         {isLogin
                             ? "Welcome back! Please login to continue."
                             : "Create an account to get started."}
@@ -65,7 +65,7 @@ export const Login = () => {
                         <div>
                             <label
                                 htmlFor="username"
-                                className="block text-sm font-medium text-gray-700 mb-2"
+                                className="block text-sm font-medium text-gray-300 mb-2"
                             >
                                 Username
                             </label>
@@ -76,7 +76,8 @@ export const Login = () => {
                                 value={formData.username}
                                 onChange={handleChange}
                                 required={!isLogin}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                className="w-full px-4 py-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white"
+                                style={{ backgroundColor: '#1a1a1a', border: '1px solid #404040' }}
                                 placeholder="Enter your username"
                             />
                         </div>
@@ -85,7 +86,7 @@ export const Login = () => {
                     <div>
                         <label
                             htmlFor="email"
-                            className="block text-sm font-medium text-gray-700 mb-2"
+                            className="block text-sm font-medium text-gray-300 mb-2"
                         >
                             Email
                         </label>
@@ -96,7 +97,8 @@ export const Login = () => {
                             value={formData.email}
                             onChange={handleChange}
                             required
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full px-4 py-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white"
+                            style={{ backgroundColor: '#1a1a1a', border: '1px solid #404040' }}
                             placeholder="Enter your email"
                         />
                     </div>
@@ -104,7 +106,7 @@ export const Login = () => {
                     <div>
                         <label
                             htmlFor="password"
-                            className="block text-sm font-medium text-gray-700 mb-2"
+                            className="block text-sm font-medium text-gray-300 mb-2"
                         >
                             Password
                         </label>
@@ -115,13 +117,14 @@ export const Login = () => {
                             value={formData.password}
                             onChange={handleChange}
                             required
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full px-4 py-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white"
+                            style={{ backgroundColor: '#1a1a1a', border: '1px solid #404040' }}
                             placeholder="Enter your password"
                         />
                     </div>
 
                     {error && (
-                        <div className="bg-red-50 text-red-600 px-4 py-3 rounded-lg text-sm">
+                        <div className="px-4 py-3 rounded-lg text-sm text-red-400" style={{ backgroundColor: '#3d1a1a', border: '1px solid #5a2a2a' }}>
                             {error}
                         </div>
                     )}
@@ -129,7 +132,7 @@ export const Login = () => {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                        className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed"
                     >
                         {loading
                             ? "Processing..."
@@ -145,7 +148,7 @@ export const Login = () => {
                             setIsLogin(!isLogin);
                             setError("");
                         }}
-                        className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                        className="text-blue-400 hover:text-blue-300 text-sm font-medium"
                     >
                         {isLogin
                             ? "Don't have an account? Register"

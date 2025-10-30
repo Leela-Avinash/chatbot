@@ -188,6 +188,9 @@ async def chat_stream(request: ChatRequest):
     """
     async def generate() -> AsyncIterator[str]:
         try:
+            # Send initial heartbeat to establish connection
+            yield ": connected\n\n"
+            
             print(f"\n[STREAM] Starting chat for session: {request.session_id}")
             print(f"[STREAM] Message: {request.message}")
             
@@ -225,8 +228,8 @@ async def chat_stream(request: ChatRequest):
                     if hasattr(chunk, 'content') and chunk.content:
                         token = chunk.content
                         full_content += token
-                        # Emit each token
-                        yield f"data: {json.dumps({'token': token})}\n\n"
+                        # Emit each token with proper JSON encoding
+                        yield f"data: {json.dumps({'token': token}, ensure_ascii=False, separators=(',', ':'))}\n\n"
                     
                     # Collect tool calls if present
                     if hasattr(chunk, 'tool_call_chunks') and chunk.tool_call_chunks:
@@ -296,7 +299,7 @@ async def chat_stream(request: ChatRequest):
                                 else:
                                     result = await mcp_client.get_weather(city)
                             print(f"[STREAM] Weather result: {result}")
-                            yield f"data: {json.dumps({'tool': 'get_weather', 'result': result})}\n\n"
+                            yield f"data: {json.dumps({'tool': 'get_weather', 'result': result}, ensure_ascii=False, separators=(',', ':'))}\n\n"
                         elif tool_name == "create_document":
                             # Get document parameters
                             print(f"[DEBUG] tool_args: {tool_args}")
@@ -309,10 +312,11 @@ async def chat_stream(request: ChatRequest):
                             print(f"[DEBUG] Description: {description}")
                             
                             # Send initial document metadata
-                            yield f"data: {json.dumps({'tool': 'create_document', 'action': 'start', 'title': title, 'type': doc_type})}\n\n"
+                            yield f"data: {json.dumps({'tool': 'create_document', 'action': 'start', 'title': title, 'type': doc_type}, ensure_ascii=False, separators=(',', ':'))}\n\n"
                             
                             # Generate the actual content using LLM
                             full_generated_content = ""
+                            last_heartbeat = asyncio.get_event_loop().time()
                             
                             # Stream the generated content as it's being created
                             async for content_chunk in generate_document_content(
@@ -321,8 +325,14 @@ async def chat_stream(request: ChatRequest):
                                 description=description
                             ):
                                 full_generated_content += content_chunk
-                                # Stream each chunk to frontend
-                                yield f"data: {json.dumps({'tool': 'create_document', 'action': 'stream', 'chunk': content_chunk})}\n\n"
+                                # Stream each chunk to frontend with proper JSON encoding
+                                yield f"data: {json.dumps({'tool': 'create_document', 'action': 'stream', 'chunk': content_chunk}, ensure_ascii=False, separators=(',', ':'))}\n\n"
+                                
+                                # Send heartbeat every 5 seconds to keep connection alive
+                                current_time = asyncio.get_event_loop().time()
+                                if current_time - last_heartbeat > 5:
+                                    yield ": heartbeat\n\n"
+                                    last_heartbeat = current_time
                             
                             print(f"[STREAM] Document generation complete. Content length: {len(full_generated_content)}")
                             
@@ -333,24 +343,25 @@ async def chat_stream(request: ChatRequest):
                                 type=doc_type
                             )
                             
-                            # Send completion with full content
+                            # Send completion with metadata only (content already streamed)
                             final_result = {
                                 'title': title,
-                                'content': full_generated_content,
                                 'kind': doc_type,
                                 'doc_type': doc_type,
                                 'status': 'complete',
-                                'success': True
+                                'success': True,
+                                'contentLength': len(full_generated_content)
                             }
                             
-                            yield f"data: {json.dumps({'tool': 'create_document', 'action': 'complete', 'result': final_result})}\n\n"
+                            # Use ensure_ascii=False to handle unicode properly, and separators to minimize size
+                            yield f"data: {json.dumps({'tool': 'create_document', 'action': 'complete', 'result': final_result}, ensure_ascii=False, separators=(',', ':'))}\n\n"
                     except Exception as tool_error:
                         import traceback
                         print(f"[STREAM] Tool error: {tool_error}")
                         traceback.print_exc()
-                        yield f"data: {json.dumps({'error': f'Tool execution failed: {str(tool_error)}'})}\n\n"
+                        yield f"data: {json.dumps({'error': f'Tool execution failed: {str(tool_error)}'}, ensure_ascii=False, separators=(',', ':'))}\n\n"
             
-            yield "data: {\"type\": \"done\"}\n\n"
+            yield f"data: {json.dumps({'type': 'done'}, separators=(',', ':'))}\n\n"
             print(f"[STREAM] Stream completed successfully")
             
         except Exception as e:
@@ -361,7 +372,12 @@ async def chat_stream(request: ChatRequest):
     
     return StreamingResponse(
         generate(),
-        media_type="text/event-stream"
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "Connection": "keep-alive",
+        }
     )
 
 @app.get("/mcp/status")
