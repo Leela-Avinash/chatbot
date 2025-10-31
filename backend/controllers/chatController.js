@@ -184,9 +184,12 @@ export const streamMessage = async (req, res, next) => {
       // Pipe the stream
       langGraphResponse.data.on('data', (chunk) => {
         const chunkStr = chunk.toString();
-        res.write(chunkStr);
         
-        // Parse to collect full response
+        // ALWAYS forward the chunk to frontend first
+        res.write(chunkStr);
+        res.flush && res.flush();  // Flush immediately if available
+        
+        // Then parse for internal tracking
         const lines = chunkStr.split('\n');
         for (const line of lines) {
           if (line.startsWith('data: ')) {
@@ -205,13 +208,13 @@ export const streamMessage = async (req, res, next) => {
                 toolCalls.push(data.tool || data);
                 console.log('Tool call received:', data.tool || data.name);
                 
-                // Capture weather data
+                // Capture weather data for DB storage
                 if (data.tool === 'get_weather' && data.result) {
                   weatherData = data.result;
-                  console.log('Weather data captured:', weatherData);
+                  console.log('🌤️ Weather data captured for DB:', weatherData.cityName);
                 }
                 
-                // Capture completed document artifacts
+                // Capture completed document artifacts for DB storage
                 if (data.tool === 'create_document') {
                   if (data.action === 'start') {
                     // Reset document content accumulator
@@ -262,9 +265,9 @@ export const streamMessage = async (req, res, next) => {
                 console.log('Artifact received');
               }
             } catch (e) {
-              // Ignore parse errors for non-JSON lines
-              if (!line.includes('ping')) {
-                console.warn('Failed to parse SSE data:', e.message);
+              // Ignore parse errors for non-JSON lines (heartbeats, connection messages)
+              if (!line.includes('ping') && !line.includes('heartbeat') && !line.includes('connected') && line.trim() !== '') {
+                console.warn('Failed to parse SSE data:', e.message, '| Line:', line.substring(0, 100));
               }
             }
           }
