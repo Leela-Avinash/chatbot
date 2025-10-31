@@ -5,3 +5,5 @@ nodemodules/
 __pycache__/
 **/__pycache__/
 docs/*
+
+*.md

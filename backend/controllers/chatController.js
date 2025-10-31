@@ -4,7 +4,6 @@ import { MESSAGE_TYPES } from '../constants/messageTypes.js';
 
 const LANGGRAPH_URL = process.env.LANGGRAPH_API_URL || 'http://localhost:8000';
 
-// Get all chats for user
 export const getUserChats = async (req, res, next) => {
   try {
     const chats = await Chat.find({ userId: req.user.id })
@@ -17,7 +16,6 @@ export const getUserChats = async (req, res, next) => {
   }
 };
 
-// Get specific chat
 export const getChatById = async (req, res, next) => {
   try {
     const chat = await Chat.findOne({
@@ -35,7 +33,6 @@ export const getChatById = async (req, res, next) => {
   }
 };
 
-// Create new chat
 export const createChat = async (req, res, next) => {
   try {
     const { title } = req.body;
@@ -54,73 +51,11 @@ export const createChat = async (req, res, next) => {
   }
 };
 
-// Send message and get response (non-streaming)
-export const sendMessage = async (req, res, next) => {
-  try {
-    const { message } = req.body;
-    const chatId = req.params.id;
-    
-    // Find chat
-    const chat = await Chat.findOne({
-      _id: chatId,
-      userId: req.user.id,
-    });
-    
-    if (!chat) {
-      return res.status(404).json({ error: 'Chat not found' });
-    }
-    
-    // Add user message
-    const userMessage = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: message,
-      createdAt: new Date(),
-    };
-    
-    chat.messages.push(userMessage);
-    await chat.save();
-    
-    // Forward to LangGraph agent
-    const response = await axios.post(`${LANGGRAPH_URL}/chat`, {
-      message,
-      session_id: chatId,
-      user_id: req.user.id,
-      stream: false,
-    });
-    
-    // Add assistant message
-    const assistantMessage = {
-      id: (Date.now() + 1).toString(),
-      role: 'assistant',
-      content: response.data.response,
-      createdAt: new Date(),
-      metadata: {
-        toolCalls: response.data.tool_calls,
-        artifacts: response.data.artifacts,
-      },
-    };
-    
-    chat.messages.push(assistantMessage);
-    await chat.save();
-    
-    res.json({
-      success: true,
-      message: assistantMessage,
-    });
-  } catch (error) {
-    console.error('Error sending message:', error);
-    next(error);
-  }
-};
-
-// Stream message (SSE)
 export const streamMessage = async (req, res, next) => {
   try {
     const { message } = req.body;
     const chatId = req.params.id;
     
-    // Find chat
     const chat = await Chat.findOne({
       _id: chatId,
       userId: req.user.id,
@@ -130,7 +65,6 @@ export const streamMessage = async (req, res, next) => {
       return res.status(404).json({ error: 'Chat not found' });
     }
     
-    // Add user message
     const userMessage = {
       id: Date.now().toString(),
       role: 'user',
@@ -140,9 +74,7 @@ export const streamMessage = async (req, res, next) => {
     
     chat.messages.push(userMessage);
     
-    // Update chat title if this is the first message
     if (chat.messages.length === 1 && chat.title === 'New Chat') {
-      // Generate title from first message (first 50 chars)
       const newTitle = message.length > 50 ? message.substring(0, 50) + '...' : message;
       chat.title = newTitle;
     }
@@ -150,7 +82,6 @@ export const streamMessage = async (req, res, next) => {
     await chat.save();
     console.log('✓ User message saved to chat:', chatId);
     
-    // Setup SSE
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -161,14 +92,13 @@ export const streamMessage = async (req, res, next) => {
     let toolCalls = [];
     let artifacts = [];
     let weatherData = null;
-    let documentRefs = [];  // Store document references
-    let currentDocumentContent = '';  // Accumulate streaming document content
-    let currentDocumentMetadata = null;  // Store document metadata
-    
+    let documentRefs = [];
+    let currentDocumentContent = '';
+    let currentDocumentMetadata = null;
+
     try {
-      // Forward to LangGraph agent with streaming
       const langGraphResponse = await axios.post(
-        `${LANGGRAPH_URL}/chat/stream`,  // Use /chat/stream endpoint
+        `${LANGGRAPH_URL}/chat/stream`,
         {
           message,
           session_id: chatId,
@@ -181,54 +111,44 @@ export const streamMessage = async (req, res, next) => {
       
       console.log('✓ Connected to LangGraph stream');
       
-      // Pipe the stream
       langGraphResponse.data.on('data', (chunk) => {
         const chunkStr = chunk.toString();
         
-        // ALWAYS forward the chunk to frontend first
         res.write(chunkStr);
-        res.flush && res.flush();  // Flush immediately if available
+        res.flush && res.flush();
         
-        // Then parse for internal tracking
         const lines = chunkStr.split('\n');
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.substring(6));
-              
-              // Handle different event types from LangGraph
+              console.log('SSE data received:', data);
               if (data.token) {
-                // Token from streaming LLM
                 fullResponse += data.token;
               } else if (data.type === 'text_chunk' || data.content) {
-                // Text chunk with content
                 fullResponse += data.content || '';
               } else if (data.type === 'tool_call' || data.tool) {
-                // Tool call event
                 toolCalls.push(data.tool || data);
                 console.log('Tool call received:', data.tool || data.name);
                 
-                // Capture weather data for DB storage
                 if (data.tool === 'get_weather' && data.result) {
                   weatherData = data.result;
-                  console.log('🌤️ Weather data captured for DB:', weatherData.cityName);
+                  console.log('Weather data captured for DB:', weatherData.cityName);
                 }
                 
-                // Capture completed document artifacts for DB storage
                 if (data.tool === 'create_document') {
                   if (data.action === 'start') {
-                    // Reset document content accumulator
                     currentDocumentContent = '';
                     currentDocumentMetadata = {
                       title: data.title || 'Document',
                       type: data.type || 'text',
                     };
-                    console.log('📄 Document stream started:', currentDocumentMetadata);
+                    console.log('Document stream started:', currentDocumentMetadata);
                   } else if (data.action === 'stream' && data.chunk) {
                     // Accumulate document content as it streams
                     currentDocumentContent += data.chunk;
                   } else if (data.action === 'complete' && data.result) {
-                    console.log('📄 Document completion event received:', {
+                    console.log('Document completion event received:', {
                       title: data.result.title,
                       kind: data.result.kind,
                       accumulatedContentLength: currentDocumentContent.length
@@ -275,7 +195,7 @@ export const streamMessage = async (req, res, next) => {
       });
       
       langGraphResponse.data.on('end', async () => {
-        console.log('📊 Stream ended. Summary:', {
+        console.log('Stream ended. Summary:', {
           responseLength: fullResponse.length,
           hasWeatherData: !!weatherData,
           documentRefsCount: documentRefs.length,
@@ -295,7 +215,7 @@ export const streamMessage = async (req, res, next) => {
               messageType = MESSAGE_TYPES.DOCUMENT;
             }
             
-            console.log('📝 Message type determined:', messageType, {
+            console.log('Message type determined:', messageType, {
               hasWeatherData: !!weatherData,
               documentCount: documentRefs.length,
               contentLength: fullResponse.length
@@ -364,7 +284,7 @@ export const streamMessage = async (req, res, next) => {
             }
             
             // Log final message structure before saving
-            console.log('💾 Final message structure:', {
+            console.log('Final message structure:', {
               id: assistantMessage.id,
               type: assistantMessage.type,
               hasContent: !!assistantMessage.content,

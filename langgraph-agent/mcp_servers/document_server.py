@@ -1,10 +1,10 @@
 """
 Real MCP Document Server using official MCP SDK
 Communicates via stdio (stdin/stdout) using JSON-RPC 2.0
-Stores documents in-memory
 """
 import asyncio
 import json
+import os
 from typing import Any
 from datetime import datetime
 import uuid
@@ -12,12 +12,13 @@ import uuid
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Initialize MCP server
 app = Server("document-server")
-
-# In-memory document storage
-documents = {}
 
 @app.list_tools()
 async def list_tools() -> list[Tool]:
@@ -27,7 +28,7 @@ async def list_tools() -> list[Tool]:
     return [
         Tool(
             name="create_document",
-            description="Create a new document artifact",
+            description="Generate and create a new document artifact using AI. Provide a title, description of what to generate, and document type.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -35,9 +36,9 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "Document title"
                     },
-                    "content": {
+                    "description": {
                         "type": "string",
-                        "description": "Document content"
+                        "description": "Description of what content to generate (e.g., 'about Python lists', 'REST API tutorial')"
                     },
                     "type": {
                         "type": "string",
@@ -45,23 +46,9 @@ async def list_tools() -> list[Tool]:
                         "enum": ["text", "code", "sheet"]
                     }
                 },
-                "required": ["title", "content", "type"]
+                "required": ["title", "description", "type"]
             }
         ),
-        Tool(
-            name="get_document",
-            description="Retrieve a document by ID",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "id": {
-                        "type": "string",
-                        "description": "Document ID"
-                    }
-                },
-                "required": ["id"]
-            }
-        )
     ]
 
 @app.call_tool()
@@ -71,34 +58,108 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
     """
     if name == "create_document":
         return await create_document(arguments)
-    elif name == "get_document":
-        return await get_document(arguments)
     else:
         return [TextContent(
             type="text",
             text=f"Unknown tool: {name}"
         )]
 
-async def create_document(arguments: dict) -> list[TextContent]:
+async def generate_document_content(title: str, doc_type: str, description: str) -> str:
     """
-    Create a new document and store in memory
+    Generate document content using Google Gemini AI
     
     Args:
-        arguments: {"title": "...", "content": "...", "type": "text|code|sheet"}
+        title: Document title
+        doc_type: Document type (text, code, sheet)
+        description: What to generate
+    
+    Returns:
+        Generated content as string
+    """
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    from langchain_core.messages import HumanMessage
+    
+    # Get API key from environment
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY not found in environment variables")
+    
+    # Create LLM
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-2.0-flash",
+        temperature=0.7,
+        google_api_key=api_key,
+        max_output_tokens=8000
+    )
+    
+    # Create appropriate prompt based on document type
+    prompts = {
+        "text": f"""Write a focused, concise, structured document on: {title}
+
+User Request: {description}
+
+Requirements:
+- Length: 500–800 words
+- Stay strictly on topic
+- Sections: Introduction, 2–4 key sections, Key points/impact
+- Use bold for keywords, bullet points where helpful
+- Include specific facts, dates, examples, and numbers""",
+        
+        "code": f"""Write a programming tutorial/guide on: {title}
+
+User Request: {description}
+
+Requirements:
+- Include clear explanations with code examples
+- Use proper markdown formatting with code blocks
+- Show practical, working examples
+- Include comments in code""",
+        
+        "sheet": f"""Create a data table/spreadsheet for: {title}
+
+User Request: {description}
+
+Requirements:
+- Use markdown table format
+- Include headers and proper alignment
+- Add relevant data rows
+- Keep it organized and readable"""
+    }
+    
+    prompt = prompts.get(doc_type, prompts["text"])
+    
+    # Generate content
+    response = await llm.ainvoke([HumanMessage(content=prompt)])
+    return response.content
+
+async def create_document(arguments: dict) -> list[TextContent]:
+    """
+    Generate document content using AI and create document
+    
+    Args:
+        arguments: {"title": "...", "description": "...", "type": "text|code|sheet"}
     
     Returns:
         Document info as JSON TextContent
     """
     try:
         title = arguments.get("title")
-        content = arguments.get("content")
+        description = arguments.get("description")
         doc_type = arguments.get("type", "text")
         
-        if not title or not content:
+        if not title or not description:
             return [TextContent(
                 type="text",
-                text="Error: title and content are required"
+                text=json.dumps({"error": "title and description are required"})
             )]
+        
+        # Generate content using AI
+        print(f"[DOCUMENT_SERVER] Generating document: {title}, type: {doc_type}")
+        print(f"[DOCUMENT_SERVER] Description: {description}")
+        
+        content = await generate_document_content(title, doc_type, description)
+        
+        print(f"[DOCUMENT_SERVER] Generated content length: {len(content)}")
         
         # Create document
         doc_id = str(uuid.uuid4())
@@ -113,9 +174,6 @@ async def create_document(arguments: dict) -> list[TextContent]:
             "updated_at": now
         }
         
-        # Store in memory
-        documents[doc_id] = document
-        
         # Return as JSON to maintain data structure
         result = {
             "success": True,
@@ -128,50 +186,12 @@ async def create_document(arguments: dict) -> list[TextContent]:
         )]
         
     except Exception as e:
+        import traceback
+        print(f"[DOCUMENT_SERVER] Error: {str(e)}")
+        traceback.print_exc()
         return [TextContent(
             type="text",
             text=json.dumps({"error": f"Failed to create document: {str(e)}"})
-        )]
-
-async def get_document(arguments: dict) -> list[TextContent]:
-    """
-    Retrieve a document from memory
-    
-    Args:
-        arguments: {"id": "document-id"}
-    
-    Returns:
-        Document data as JSON TextContent
-    """
-    try:
-        doc_id = arguments.get("id")
-        
-        if not doc_id:
-            return [TextContent(
-                type="text",
-                text=json.dumps({"error": "Document ID is required"})
-            )]
-        
-        if doc_id not in documents:
-            return [TextContent(
-                type="text",
-                text=json.dumps({"error": f"Document not found: {doc_id}"})
-            )]
-        
-        result = {
-            "success": True,
-            "document": documents[doc_id]
-        }
-        
-        return [TextContent(
-            type="text",
-            text=json.dumps(result)
-        )]
-        
-    except Exception as e:
-        return [TextContent(
-            type="text",
-            text=json.dumps({"error": f"Failed to retrieve document: {str(e)}"})
         )]
 
 async def main():

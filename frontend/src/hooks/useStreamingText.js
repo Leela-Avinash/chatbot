@@ -8,8 +8,9 @@ export const useStreamingText = (options = {}) => {
         onChunk,
         onComplete,
         onError,
+        onToolCall,
         smoothing = true,
-        chunkDelay = 20,
+        chunkDelay = 15, // Match current Chat.jsx delay
     } = options;
 
     const processStream = useCallback(
@@ -25,6 +26,7 @@ export const useStreamingText = (options = {}) => {
             }
 
             let fullText = "";
+            let fullDocumentContent = ""; // For document artifacts
 
             try {
                 while (true) {
@@ -40,12 +42,12 @@ export const useStreamingText = (options = {}) => {
                             try {
                                 const data = JSON.parse(line.substring(6));
 
-                                if (data.type === "text_chunk") {
-                                    const content = data.content;
+                                // Handle text tokens (main chat response)
+                                if (data.type === "text_chunk" || data.token) {
+                                    const textContent = data.content || data.token;
 
                                     if (smoothing) {
-                                        // Smooth character-by-character rendering
-                                        for (const char of content) {
+                                        for (const char of textContent) {
                                             fullText += char;
                                             setStreamedText(fullText);
                                             onChunk?.(char);
@@ -54,21 +56,44 @@ export const useStreamingText = (options = {}) => {
                                             );
                                         }
                                     } else {
-                                        fullText += content;
+                                        fullText += textContent;
                                         setStreamedText(fullText);
-                                        onChunk?.(content);
+                                        onChunk?.(textContent);
                                     }
-                                } else if (data.type === "done") {
-                                    onComplete?.(fullText);
-                                } else if (data.type === "error") {
-                                    throw new Error(data.message);
                                 }
+
+                                // Handle document streaming
+                                if (data.tool === 'create_document') {
+                                    if (data.action === 'start') {
+                                        fullDocumentContent = '';
+                                        // Notify about document start
+                                        onToolCall?.(data);
+                                    } else if (data.action === 'stream' && data.chunk) {
+                                        fullDocumentContent += data.chunk;
+                                        // Notify about each chunk during streaming
+                                        onToolCall?.(data);
+                                    } else if (data.action === 'complete') {
+                                        // Notify about completion with full content
+                                        onToolCall?.({
+                                            ...data,
+                                            documentContent: fullDocumentContent
+                                        });
+                                    }
+                                }
+                                
+                                // Handle all other tool calls (weather, errors, etc.)
+                                if (data.tool && data.tool !== 'create_document') {
+                                    onToolCall?.(data);
+                                }
+
                             } catch (parseError) {
                                 console.warn("Failed to parse SSE data:", line);
                             }
                         }
                     }
                 }
+
+                onComplete?.(fullText);
             } catch (error) {
                 onError?.(error);
                 throw error;
@@ -78,7 +103,7 @@ export const useStreamingText = (options = {}) => {
 
             return fullText;
         },
-        [onChunk, onComplete, onError, smoothing, chunkDelay]
+        [onChunk, onComplete, onError, onToolCall, smoothing, chunkDelay]
     );
 
     const reset = useCallback(() => {

@@ -3,7 +3,7 @@ export const MESSAGE_TYPES = {
     GENERAL: 'general',
     WEATHER: 'weather',
     DOCUMENT: 'document',
-    COMBINED: 'combined',  // Both weather and document data
+    COMBINED: 'combined',  
 };
 
 export const MESSAGE_ROLES = {

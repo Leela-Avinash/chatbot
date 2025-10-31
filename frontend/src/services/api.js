@@ -71,67 +71,14 @@ export const chatApi = {
         const response = await api.delete(`/api/chat/${chatId}`);
         return response.data;
     },
-
-    // Legacy support - direct to LangGraph
-    sendMessageDirect: async (message, sessionId) => {
-        const response = await fetch(`${LANGGRAPH_URL}/chat`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                message,
-                session_id: sessionId,
-                stream: true,
-            }),
-        });
-
-        return response;
-    },
-
-    getChatHistory: async (chatId) => {
-        const response = await api.get(`/api/chat/${chatId}`);
-        return response.data;
-    },
 };
 
 // Document API
 export const documentApi = {
-    // Get documents for chat
-    getDocuments: async (chatId) => {
-        const response = await api.get("/api/document", { params: { chatId } });
-        return response.data.documents;
-    },
-
     // Get single document
     getDocument: async (documentId) => {
         const response = await api.get(`/api/document/${documentId}`);
         return response.data.document;
-    },
-
-    // Create document
-    createDocument: async (chatId, title, kind, content) => {
-        const response = await api.post("/api/document", {
-            chatId,
-            title,
-            kind,
-            content,
-        });
-        return response.data.document;
-    },
-
-    // Update document
-    updateDocument: async (documentId, content) => {
-        const response = await api.patch(`/api/document/${documentId}`, {
-            content,
-        });
-        return response.data.document;
-    },
-
-    // Delete document
-    deleteDocument: async (documentId) => {
-        const response = await api.delete(`/api/document/${documentId}`);
-        return response.data;
     },
 };
 

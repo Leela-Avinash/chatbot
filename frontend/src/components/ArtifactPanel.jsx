@@ -8,11 +8,17 @@ import { ArtifactEditor } from './ArtifactEditor';
 import { useDispatch } from 'react-redux';
 import { setCurrentArtifact } from '../store/chatSlice';
 
-export const ArtifactPanel = ({ artifact, onClose }) => {
+export const ArtifactPanel = ({ artifact, onClose, streamingResponse }) => {
     const dispatch = useDispatch();
     const [useEditor, setUseEditor] = useState(false);
     const [codeLanguage, setCodeLanguage] = useState('javascript');
     const contentRef = useRef(null);
+
+    // ArtifactPanel now relies on the centralized Redux artifact content
+    // for streaming updates. The Chat flow appends characters to
+    // `currentArtifact.content` (via `appendArtifactContent`) so the panel
+    // renders that value directly. This avoids duplicate processing and
+    // makes artifact streaming behave like assistant typing.
 
     // Detect language from artifact title or content
     // This hook must be before the early return
@@ -394,7 +400,7 @@ export const ArtifactPanel = ({ artifact, onClose }) => {
                                     ">
                             {artifact.type === 'text' || artifact.type === 'sheet' ? (
                                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                    {artifact.content}
+                                    {artifact.content || ''}
                                 </ReactMarkdown>
                             ) : artifact.type === 'code' ? (
                                 <ReactMarkdown
@@ -426,7 +432,7 @@ export const ArtifactPanel = ({ artifact, onClose }) => {
                                         }
                                     }}
                                 >
-                                    {artifact.content}
+                                    {artifact.content || ''}
                                 </ReactMarkdown>
                             ) : (
                                 <div className="whitespace-pre-wrap font-mono text-sm">

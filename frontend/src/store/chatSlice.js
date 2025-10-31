@@ -20,11 +20,17 @@ const chatSlice = createSlice({
         },
         addDocumentToLastMessage: (state, action) => {
             const lastMessage = state.messages[state.messages.length - 1];
+            console.log('addDocumentToLastMessage called:', {
+                hasLastMessage: !!lastMessage,
+                isAssistant: lastMessage?.role === "assistant",
+                document: action.payload
+            });
             if (lastMessage && lastMessage.role === "assistant") {
                 if (!lastMessage.documents) {
                     lastMessage.documents = [];
                 }
                 lastMessage.documents.push(action.payload);
+                console.log('Document added to message. Total documents:', lastMessage.documents.length);
                 
                 // Update message type intelligently
                 if (lastMessage.weatherData) {
@@ -32,12 +38,19 @@ const chatSlice = createSlice({
                 } else {
                     lastMessage.type = MESSAGE_TYPES.DOCUMENT;  // Only documents
                 }
+                console.log('Message type updated to:', lastMessage.type);
             }
         },
         setLastMessageWeatherData: (state, action) => {
             const lastMessage = state.messages[state.messages.length - 1];
+            console.log('setLastMessageWeatherData called:', {
+                hasLastMessage: !!lastMessage,
+                isAssistant: lastMessage?.role === "assistant",
+                weatherData: action.payload
+            });
             if (lastMessage && lastMessage.role === "assistant") {
                 lastMessage.weatherData = action.payload;
+                console.log('Weather data set to message');
                 
                 // Update message type intelligently
                 if (lastMessage.documents && lastMessage.documents.length > 0) {
@@ -45,6 +58,7 @@ const chatSlice = createSlice({
                 } else {
                     lastMessage.type = MESSAGE_TYPES.WEATHER;  // Only weather
                 }
+                console.log('Message type updated to:', lastMessage.type);
             }
         },
         setCurrentArtifact: (state, action) => {

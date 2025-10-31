@@ -40,20 +40,3 @@ export async function authMiddleware(req, res, next) {
         });
     }
 }
-
-export function optionalAuth(req, res, next) {
-    const token = req.header("Authorization")?.replace("Bearer ", "");
-
-    if (!token) {
-        return next();
-    }
-
-    try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'chatgpt_clone_secret_key');
-        req.userId = decoded.userId;
-    } catch (error) {
-        console.log("Optional auth: Invalid token");
-    }
-
-    next();
-}

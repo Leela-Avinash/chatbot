@@ -23,20 +23,20 @@ async def get_weather(city: str) -> dict:
     return await mcp_client.get_weather(city)
 
 @tool
-async def create_document(title: str, content: str, type: str = "text") -> dict:
+async def create_document(title: str, description: str, type: str = "text") -> dict:
     """Create a formal document, essay, code file, or table via MCP.
     ONLY use when user explicitly asks to 'write a document', 'create an essay', 
     'write code', or 'make a table'. DO NOT use for simple questions.
     
     Args:
         title: Document title
-        content: Document content or description of what to generate
+        description: Description of what content to generate (e.g., 'about Python lists', 'REST API tutorial')
         type: Type of document ('text' for essays/reports, 'code' for programming, 'sheet' for tables)
     
     Returns:
         Document creation result with id, title, and content
     """
-    return await mcp_client.create_document(title, content, type)
+    return await mcp_client.create_document(title, description, type)
 
 # Initialize LLM
 def get_llm(streaming: bool = True):
@@ -113,10 +113,10 @@ IMPORTANT: When user says "create a document" or similar:
      * 'sheet' - Data tables, spreadsheets
 
 Examples:
-❌ BAD: "What title would you like for the document?"
-✅ GOOD: Immediately call create_document("Fundamentals of C", "Explain fundamentals of C with code examples", "code")
-✅ GOOD: Immediately call create_document("Climate Change Essay", "Write essay on climate change impacts", "text")
-✅ GOOD: Immediately call create_document("Sales Data", "Create table of quarterly sales data", "sheet")
+BAD: "What title would you like for the document?"
+GOOD: Immediately call create_document("Fundamentals of C", "Explain fundamentals of C with code examples", "code")
+GOOD: Immediately call create_document("Climate Change Essay", "Write essay on climate change impacts", "text")
+GOOD: Immediately call create_document("Sales Data", "Create table of quarterly sales data", "sheet")
 
 ============================================================
 DECISION TREE (FOLLOW EXACTLY)

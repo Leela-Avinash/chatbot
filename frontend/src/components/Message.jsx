@@ -9,7 +9,12 @@ import { DocumentCard } from './DocumentCard';
 
 export const Message = ({ message, onDocumentClick }) => {
     const isUser = message.role === 'user';
-    const isThinking = message.role === 'assistant' && !message.content && message.type === 'general';
+    // Only show "Thinking..." if there's truly no content, weather data, or documents
+    const isThinking = message.role === 'assistant' && 
+                      !message.content && 
+                      !message.weatherData && 
+                      (!message.documents || message.documents.length === 0) &&
+                      message.type === 'general';
 
     // Debug logging for assistant messages
     if (!isUser) {

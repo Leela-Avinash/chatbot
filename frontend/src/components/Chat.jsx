@@ -18,6 +18,7 @@ import { Sidebar } from './Sidebar';
 import { ConfirmModal } from './ConfirmModal';
 import { chatApi, documentApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useStreamingText } from '../hooks/useStreamingText';
 
 export const Chat = () => {
     const dispatch = useDispatch();
@@ -32,6 +33,73 @@ export const Chat = () => {
     const [isLoadingChat, setIsLoadingChat] = useState(false);
     const messagesEndRef = useRef(null);
     const messagesCache = useRef({});  // Cache for loaded messages
+
+    // Streaming hook for text and tool processing
+    const { processStream } = useStreamingText({
+        onChunk: (char) => dispatch(updateLastMessage(char)),
+        onToolCall: (data) => {
+            console.log('🔧 Tool call received in Chat:', data);
+            
+            // Handle weather tool (including errors)
+            if (data.tool === 'get_weather') {
+                if (data.result) {
+                    console.log('Setting weather data to last message:', data.result);
+                    dispatch(setLastMessageWeatherData(data.result));
+                } else {
+                    console.warn('Weather result is missing');
+                }
+            }
+
+            // Handle document creation
+            if (data.tool === 'create_document') {
+                if (data.action === 'start') {
+                    console.log('Document streaming started');
+                    // Clear the artifact panel for new document
+                    dispatch(setCurrentArtifact({
+                        type: data.type || 'text',
+                        title: data.title || 'Document',
+                        content: '',
+                        status: 'streaming',
+                    }));
+                } else if (data.action === 'stream') {
+                    // Stream document content into the artifact as smooth typing
+                    // Break incoming chunk into characters and append one-by-one so
+                    // the UI renders it like the assistant's typing stream.
+                    const chunk = data.chunk || '';
+                    for (const ch of chunk) {
+                        dispatch(appendArtifactContent(ch));
+                    }
+                } else if (data.action === 'complete') {
+                    console.log('📄 Document complete event:', {
+                        title: data.result?.title,
+                        type: data.result?.kind,
+                        contentLength: data.documentContent?.length
+                    });
+
+                    const completedDocument = {
+                        type: data.result?.kind || data.result?.doc_type || 'text',
+                        title: data.result?.title || 'Document',
+                        content: data.documentContent || '',
+                        kind: data.result?.kind || data.result?.doc_type,
+                        status: 'complete',
+                    };
+
+                    // Update the artifact panel with completed document
+                    dispatch(setCurrentArtifact(completedDocument));
+
+                    console.log('📎 Adding document to last message');
+                    dispatch(addDocumentToLastMessage(completedDocument));
+                }
+            }
+        },
+        onComplete: () => {
+            dispatch(setIsStreaming(false));
+        },
+        onError: (error) => {
+            console.error('Streaming error:', error);
+            dispatch(setIsStreaming(false));
+        }
+    });
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -288,104 +356,9 @@ export const Chat = () => {
                 throw new Error('HTTP error! status: ' + response.status);
             }
 
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let fullText = '';
-            let fullDocumentContent = ''; // Track document content during streaming
+            // Use the streaming hook to process the response
+            await processStream(response);
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                const chunk = decoder.decode(value, { stream: true });
-                const lines = chunk.split('\n');
-
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        try {
-                            const data = JSON.parse(line.slice(6));
-
-                            if (data.type === 'text_chunk' || data.token) {
-                                const textContent = data.content || data.token;
-                                
-                                for (const char of textContent) {
-                                    fullText += char;
-                                    dispatch(updateLastMessage(char));
-                                    await new Promise(resolve => setTimeout(resolve, 15));
-                                }
-                            }
-
-                            if (data.tool) {
-                                console.log('🔧 Tool event received:', {
-                                    tool: data.tool,
-                                    action: data.action,
-                                    hasResult: !!data.result
-                                });
-                                
-                                if (data.tool === 'get_weather' && data.result) {
-                                    // Store weather data in the message itself
-                                    if (data.result && (data.result.current || data.result.error)) {
-                                        console.log('🌤️ Setting weather data to last message');
-                                        dispatch(setLastMessageWeatherData(data.result));
-                                    }
-                                }
-
-                                if (data.tool === 'create_document') {
-                                    if (data.action === 'start') {
-                                        // Reset document content counter
-                                        fullDocumentContent = '';
-                                        
-                                        // Clear the artifact panel for new document
-                                        dispatch(setCurrentArtifact({
-                                            type: data.type || 'text',
-                                            title: data.title || 'Document',
-                                            content: '',
-                                            status: 'streaming',
-                                        }));
-                                        
-                                        // DON'T add placeholder text - it's not needed
-                                        // The document will appear in the document card when complete
-                                    } else if (data.action === 'stream') {
-                                        // Accumulate document content
-                                        fullDocumentContent += data.chunk;
-                                        dispatch(appendArtifactContent(data.chunk));
-                                    } else if (data.action === 'complete' && data.result) {
-                                        console.log('📄 Document complete event:', {
-                                            title: data.result.title,
-                                            type: data.result.kind,
-                                            contentLength: fullDocumentContent.length
-                                        });
-                                        
-                                        const completedDocument = {
-                                            type: data.result.kind || data.result.doc_type || 'text',
-                                            title: data.result.title || 'Document',
-                                            content: fullDocumentContent, // Use accumulated content
-                                            kind: data.result.kind || data.result.doc_type,
-                                            status: 'complete',
-                                        };
-                                        
-                                        // Update the artifact panel with completed document
-                                        dispatch(setCurrentArtifact(completedDocument));
-                                        
-                                        console.log('📎 Adding document to last message');
-                                        // Add the document to the message (with content for immediate display)
-                                        // After reload, the backend will provide documentId reference instead
-                                        dispatch(addDocumentToLastMessage(completedDocument));
-                                    }
-                                }
-                            }
-
-                            if (data.type === 'done') {
-                                // Stream complete
-                            }
-                        } catch (e) {
-                            console.warn('Failed to parse SSE data:', e);
-                        }
-                    }
-                }
-            }
-
-            dispatch(setIsStreaming(false));
         } catch (error) {
             console.error('Chat error:', error);
             dispatch(updateLastMessage('\n\nSorry, an error occurred.'));

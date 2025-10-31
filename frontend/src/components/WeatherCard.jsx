@@ -21,6 +21,9 @@ export const WeatherCard = ({ data }) => {
         return null;
     }
 
+    console.log("WeatherCard data:", data);
+    console.log("Current weather data:", data.current);
+
     const { 
         cityName = 'Unknown', 
         country = '', 

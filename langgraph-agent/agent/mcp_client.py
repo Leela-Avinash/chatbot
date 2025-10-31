@@ -108,10 +108,10 @@ class MCPClient:
     async def get_weather(self, city: str):
         return await self.call_tool("weather", "get_weather", {"city": city})
 
-    async def create_document(self, title: str, content: str, type: str = "text"):
+    async def create_document(self, title: str, description: str, type: str = "text"):
         return await self.call_tool("document", "create_document", {
             "title": title,
-            "content": content,
+            "description": description,
             "type": type,
         })
 

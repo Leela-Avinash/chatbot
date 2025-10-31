@@ -27,67 +27,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-async def generate_document_content(title: str, kind: str, description: str):
-    """
-    Generate document content using LLM with streaming
-    
-    Args:
-        title: Document title
-        kind: Document type ('text', 'code', 'sheet')
-        description: Description of what to generate
-    
-    Yields:
-        Content chunks as they're generated
-    """
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
-        temperature=0.7,
-        streaming=True,
-        max_output_tokens=8000
-    )
-    
-    # Create appropriate prompt based on document kind
-    prompts = {
-        "text": f"""Write a focused, concise, structured document on: {title}
-
-User Request: {description}
-
-Requirements:
-- Length: 500–800 words
-- Stay strictly on topic
-- Sections: Introduction, 2–4 key sections, Key points/impact
-- Use bold for keywords, bullet points where helpful
-- Include specific facts, dates, examples, and numbers""",
-        
-        "code": f"""Write a programming tutorial/guide on: {title}
-
-User Request: {description}
-
-Requirements:
-- Include clear explanations with code examples
-- Use proper markdown formatting with code blocks
-- Show practical, working examples
-- Include comments in code""",
-        
-        "sheet": f"""Create a data table/spreadsheet for: {title}
-
-User Request: {description}
-
-Requirements:
-- Use markdown table format
-- Include headers and proper alignment
-- Add relevant data rows
-- Keep it organized and readable"""
-    }
-    
-    prompt = prompts.get(kind, prompts["text"])
-    
-    async for chunk in llm.astream(prompt):
-        if chunk.content:
-            yield chunk.content
-
 @app.on_event("startup")
 async def startup_event():
     """Start MCP servers on application startup"""
@@ -305,28 +244,45 @@ async def chat_stream(request: ChatRequest):
                             print(f"[DEBUG] tool_args: {tool_args}")
                             
                             title = tool_args.get('title', 'Document')
-                            description = tool_args.get('content', '')  # This is the description, not actual content
+                            description = tool_args.get('description', '')  # Description of what to generate
                             doc_type = tool_args.get('type', 'text')  # Match the tool parameter name
                             
-                            print(f"[STREAM] Generating document: {title}, type: {doc_type}")
+                            print(f"[STREAM] Calling MCP document server: {title}, type: {doc_type}")
                             print(f"[DEBUG] Description: {description}")
                             
                             # Send initial document metadata
                             yield f"data: {json.dumps({'tool': 'create_document', 'action': 'start', 'title': title, 'type': doc_type}, ensure_ascii=False, separators=(',', ':'))}\n\n"
                             
-                            # Generate the actual content using LLM
-                            full_generated_content = ""
+                            # Call MCP document server to generate the document
+                            # The MCP server will use AI to generate the content
+                            print(f"[STREAM] Calling MCP create_document...")
+                            result = await mcp_client.create_document(
+                                title=title,
+                                description=description,
+                                type=doc_type
+                            )
+                            
+                            # Extract the generated content from MCP result
+                            if result.get('success') and result.get('document'):
+                                full_generated_content = result['document'].get('content', '')
+                                print(f"[STREAM] MCP generated content length: {len(full_generated_content)}")
+                            else:
+                                error_msg = result.get('error', 'Unknown error')
+                                print(f"[STREAM] MCP error: {error_msg}")
+                                yield f"data: {json.dumps({'error': f'Document generation failed: {error_msg}'}, ensure_ascii=False, separators=(',', ':'))}\n\n"
+                                continue
+                            
+                            # Now stream the content to frontend for smooth typing effect
+                            # Split into chunks for better streaming (not character-by-character to avoid too many events)
+                            chunk_size = 10  # Characters per chunk
                             last_heartbeat = asyncio.get_event_loop().time()
                             
-                            # Stream the generated content as it's being created
-                            async for content_chunk in generate_document_content(
-                                title=title,
-                                kind=doc_type,
-                                description=description
-                            ):
-                                full_generated_content += content_chunk
-                                # Stream each chunk to frontend with proper JSON encoding
+                            for i in range(0, len(full_generated_content), chunk_size):
+                                content_chunk = full_generated_content[i:i+chunk_size]
                                 yield f"data: {json.dumps({'tool': 'create_document', 'action': 'stream', 'chunk': content_chunk}, ensure_ascii=False, separators=(',', ':'))}\n\n"
+                                
+                                # Small delay to simulate typing
+                                await asyncio.sleep(0.02)
                                 
                                 # Send heartbeat every 5 seconds to keep connection alive
                                 current_time = asyncio.get_event_loop().time()
@@ -334,16 +290,9 @@ async def chat_stream(request: ChatRequest):
                                     yield ": heartbeat\n\n"
                                     last_heartbeat = current_time
                             
-                            print(f"[STREAM] Document generation complete. Content length: {len(full_generated_content)}")
+                            print(f"[STREAM] Document streaming complete")
                             
-                            # Store the document via MCP
-                            result = await mcp_client.create_document(
-                                title=title,
-                                content=full_generated_content,
-                                type=doc_type
-                            )
-                            
-                            # Send completion with metadata only (content already streamed)
+                            # Send completion with metadata
                             final_result = {
                                 'title': title,
                                 'kind': doc_type,
@@ -353,7 +302,6 @@ async def chat_stream(request: ChatRequest):
                                 'contentLength': len(full_generated_content)
                             }
                             
-                            # Use ensure_ascii=False to handle unicode properly, and separators to minimize size
                             yield f"data: {json.dumps({'tool': 'create_document', 'action': 'complete', 'result': final_result}, ensure_ascii=False, separators=(',', ':'))}\n\n"
                     except Exception as tool_error:
                         import traceback
