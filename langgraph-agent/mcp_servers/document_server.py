@@ -18,10 +18,8 @@ from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 
-# Load environment variables
 load_dotenv()
 
-# Initialize MCP server
 app = Server("document-server")
 
 @app.list_tools()
@@ -81,12 +79,10 @@ async def generate_document_content(title: str, doc_type: str, description: str)
         Generated content as string
     """
     
-    # Get API key from environment
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise ValueError("GOOGLE_API_KEY not found in environment variables")
     
-    # Create LLM
     llm = ChatGoogleGenerativeAI(
         model="gemini-2.0-flash",
         temperature=0.7,
@@ -94,7 +90,6 @@ async def generate_document_content(title: str, doc_type: str, description: str)
         max_output_tokens=8000
     )
     
-    # Create appropriate prompt based on document type
     prompts = {
         "text": f"""Write a focused, concise, structured document on: {title}
 
@@ -130,7 +125,6 @@ Requirements:
     
     prompt = prompts.get(doc_type, prompts["text"])
     
-    # Generate content
     response = await llm.ainvoke([HumanMessage(content=prompt)])
     return response.content
 
@@ -155,7 +149,6 @@ async def create_document(arguments: dict) -> list[TextContent]:
                 text=json.dumps({"error": "title and description are required"})
             )]
         
-        # Generate content using AI
         print(f"[DOCUMENT_SERVER] Generating document: {title}, type: {doc_type}")
         print(f"[DOCUMENT_SERVER] Description: {description}")
         
@@ -163,7 +156,6 @@ async def create_document(arguments: dict) -> list[TextContent]:
         
         print(f"[DOCUMENT_SERVER] Generated content length: {len(content)}")
         
-        # Create document
         doc_id = str(uuid.uuid4())
         now = datetime.utcnow().isoformat()
         
@@ -176,7 +168,6 @@ async def create_document(arguments: dict) -> list[TextContent]:
             "updated_at": now
         }
         
-        # Return as JSON to maintain data structure
         result = {
             "success": True,
             "document": document

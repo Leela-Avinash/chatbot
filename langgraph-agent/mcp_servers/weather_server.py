@@ -9,7 +9,6 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 
-# Initialize MCP server
 app = Server("weather-server")
 
 @app.list_tools()
@@ -74,7 +73,6 @@ async def get_weather(arguments: dict) -> list[TextContent]:
                 text="Error: city parameter is required"
             )]
         
-        # Step 1: Geocode city name to coordinates
         geocoding_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=en&format=json"
         
         async with httpx.AsyncClient() as client:
@@ -97,7 +95,6 @@ async def get_weather(arguments: dict) -> list[TextContent]:
             latitude = location["latitude"]
             longitude = location["longitude"]
             
-            # Step 2: Get weather data for coordinates
             weather_url = (
                 f"https://api.open-meteo.com/v1/forecast?"
                 f"latitude={latitude}&longitude={longitude}"
@@ -122,7 +119,6 @@ async def get_weather(arguments: dict) -> list[TextContent]:
                     text="Incomplete weather data received"
                 )]
             
-            # Format response as JSON string to maintain data structure
             import json
             result = {
                 "cityName": city,
