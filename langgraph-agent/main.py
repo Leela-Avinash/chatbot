@@ -8,11 +8,16 @@ from pydantic import BaseModel
 from typing import Dict, Optional, AsyncIterator
 import json
 import asyncio
+import traceback
 from agent.graph import agent_graph
 from agent.mcp_client import mcp_client
 import uvicorn
 from langchain_core.messages import BaseMessage, AIMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import SystemMessage, HumanMessage
+from agent.nodes import SYSTEM_PROMPT, get_weather, create_document, tool_node
 
+           
 app = FastAPI(
     title="LangGraph Agent with MCP",
     description="AI Agent using MCP for tool integration"
@@ -87,7 +92,6 @@ async def chat(request: ChatRequest) -> Dict:
         }
         
     except Exception as e:
-        import traceback
         print("ERROR TRACEBACK")
         traceback.print_exc()
         return {"error": str(e)}
@@ -123,29 +127,20 @@ def serialize_event(event: Dict) -> Dict:
 @app.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
     """
-    Stream chat responses token-by-token
+    Stream chat responses token-by-token using LangGraph agent
     """
     async def generate() -> AsyncIterator[str]:
         try:
-            # Send initial heartbeat to establish connection
             yield ": connected\n\n"
             
             print(f"\n[STREAM] Starting chat for session: {request.session_id}")
             print(f"[STREAM] Message: {request.message}")
-            
-            # Instead of using the graph, we'll directly stream from the LLM
-            # This gives us true token-by-token streaming
-            from langchain_google_genai import ChatGoogleGenerativeAI
-            from langchain_core.messages import SystemMessage, HumanMessage
-            from agent.nodes import SYSTEM_PROMPT, get_weather, create_document
-            
-            # Build messages
+             
             messages = [
                 SystemMessage(content=SYSTEM_PROMPT),
                 HumanMessage(content=request.message)
             ]
             
-            # Create LLM with streaming
             llm = ChatGoogleGenerativeAI(
                 model="gemini-2.0-flash",
                 temperature=0.7,
@@ -156,10 +151,8 @@ async def chat_stream(request: ChatRequest):
             
             print(f"[STREAM] Starting LLM stream...")
             
-            # Stream tokens
             full_content = ""
             final_chunk = None
-            tool_calls_detected = []
             stream_error = None
             
             try:
@@ -167,44 +160,28 @@ async def chat_stream(request: ChatRequest):
                     if hasattr(chunk, 'content') and chunk.content:
                         token = chunk.content
                         full_content += token
-                        # Emit each token with proper JSON encoding
                         yield f"data: {json.dumps({'token': token}, ensure_ascii=False, separators=(',', ':'))}\n\n"
-                    
-                    # Collect tool calls if present
-                    if hasattr(chunk, 'tool_call_chunks') and chunk.tool_call_chunks:
-                        for tool_chunk in chunk.tool_call_chunks:
-                            if tool_chunk:
-                                tool_calls_detected.append(tool_chunk)
                     
                     final_chunk = chunk
                 
                 print(f"[STREAM] LLM stream completed. Full content length: {len(full_content)}")
                 
             except AttributeError as e:
-                # Handle the finish_reason.name error gracefully
                 if "'int' object has no attribute 'name'" in str(e):
                     print(f"[STREAM] Warning: finish_reason enum issue encountered (harmless)")
                     stream_error = e
-                    # The stream is essentially complete, we just couldn't process the final metadata
-                    # Continue with what we have
                 else:
                     raise
             except Exception as e:
                 print(f"[STREAM] Stream error: {str(e)}")
-                import traceback
                 traceback.print_exc()
                 stream_error = e
-                # Try to continue with partial results
             
-            print(f"[STREAM] Stream processing completed. Full content length: {len(full_content)}")
-            
-            # If we had a stream error and don't have tool calls, try to get them via ainvoke
             has_tool_calls = hasattr(final_chunk, 'tool_calls') and final_chunk.tool_calls
             
             if stream_error and not has_tool_calls:
-                print(f"[STREAM] Attempting to recover tool calls via ainvoke after stream error...")
+                print(f"[STREAM] Attempting to recover tool calls via ainvoke...")
                 try:
-                    # Use ainvoke to get the complete response with tool calls
                     complete_response = await llm_with_tools.ainvoke(messages)
                     if hasattr(complete_response, 'tool_calls') and complete_response.tool_calls:
                         final_chunk = complete_response
@@ -213,67 +190,47 @@ async def chat_stream(request: ChatRequest):
                 except Exception as recovery_error:
                     print(f"[STREAM] Could not recover tool calls: {recovery_error}")
             
-            # Check if we need to call tools
+            # Step 3: If there are tool calls, use the agent graph to execute them
             if has_tool_calls:
                 print(f"[STREAM] Tool calls detected: {len(final_chunk.tool_calls)}")
                 
-                for tool_call in final_chunk.tool_calls:
-                    tool_name = tool_call.get("name")
-                    tool_args = tool_call.get("args", {})
+                messages.append(final_chunk)
+                
+                tool_state = {
+                    "messages": messages,
+                    "user_input": "",
+                    "session_id": request.session_id,
+                    "user_id": request.user_id,
+                    "tool_calls": final_chunk.tool_calls,
+                    "tool_results": [],
+                    "should_continue": True
+                }
+                                
+                print(f"[STREAM] Executing tools via agent graph...")
+                tool_result_state = await tool_node(tool_state)
+                
+                tool_results = tool_result_state.get("tool_results", [])
+                
+                for tool_result in tool_results:
+                    tool_name = tool_result.get("tool")
+                    result = tool_result.get("result", {})
                     
-                    print(f"[STREAM] Executing tool: {tool_name}")
-                    print(f"[STREAM] Tool args: {tool_args}")  # Debug logging
+                    print(f"[STREAM] Tool result for {tool_name}: {result}")
                     
-                    try:
-                        if tool_name == "get_weather":
-                            # Check if MCP client is ready
-                            if "weather" not in mcp_client.sessions:
-                                result = {"error": "Weather MCP server not started"}
-                            else:
-                                # Call MCP weather server directly
-                                # Handle both 'city' and 'location' parameter names for compatibility
-                                city = tool_args.get('city') or tool_args.get('location')
-                                if not city:
-                                    result = {"error": "No city or location specified"}
-                                else:
-                                    result = await mcp_client.get_weather(city)
-                            print(f"[STREAM] Weather result: {result}")
-                            yield f"data: {json.dumps({'tool': 'get_weather', 'result': result}, ensure_ascii=False, separators=(',', ':'))}\n\n"
-                        elif tool_name == "create_document":
-                            # Get document parameters
-                            print(f"[DEBUG] tool_args: {tool_args}")
+                    if tool_name == "get_weather":
+                        yield f"data: {json.dumps({'tool': 'get_weather', 'result': result}, ensure_ascii=False, separators=(',', ':'))}\n\n"
+                    
+                    elif tool_name == "create_document":
+                        if result.get('success') and result.get('document'):
+                            doc = result['document']
+                            title = doc.get('title', 'Document')
+                            doc_type = doc.get('type', 'text')
+                            full_generated_content = doc.get('content', '')
                             
-                            title = tool_args.get('title', 'Document')
-                            description = tool_args.get('description', '')  # Description of what to generate
-                            doc_type = tool_args.get('type', 'text')  # Match the tool parameter name
+                            print(f"[STREAM] Streaming document: {title}, type: {doc_type}, length: {len(full_generated_content)}")
                             
-                            print(f"[STREAM] Calling MCP document server: {title}, type: {doc_type}")
-                            print(f"[DEBUG] Description: {description}")
-                            
-                            # Send initial document metadata
                             yield f"data: {json.dumps({'tool': 'create_document', 'action': 'start', 'title': title, 'type': doc_type}, ensure_ascii=False, separators=(',', ':'))}\n\n"
                             
-                            # Call MCP document server to generate the document
-                            # The MCP server will use AI to generate the content
-                            print(f"[STREAM] Calling MCP create_document...")
-                            result = await mcp_client.create_document(
-                                title=title,
-                                description=description,
-                                type=doc_type
-                            )
-                            
-                            # Extract the generated content from MCP result
-                            if result.get('success') and result.get('document'):
-                                full_generated_content = result['document'].get('content', '')
-                                print(f"[STREAM] MCP generated content length: {len(full_generated_content)}")
-                            else:
-                                error_msg = result.get('error', 'Unknown error')
-                                print(f"[STREAM] MCP error: {error_msg}")
-                                yield f"data: {json.dumps({'error': f'Document generation failed: {error_msg}'}, ensure_ascii=False, separators=(',', ':'))}\n\n"
-                                continue
-                            
-                            # Now stream the content to frontend for smooth typing effect
-                            # Split into chunks for better streaming (not character-by-character to avoid too many events)
                             chunk_size = 10  # Characters per chunk
                             last_heartbeat = asyncio.get_event_loop().time()
                             
@@ -281,10 +238,8 @@ async def chat_stream(request: ChatRequest):
                                 content_chunk = full_generated_content[i:i+chunk_size]
                                 yield f"data: {json.dumps({'tool': 'create_document', 'action': 'stream', 'chunk': content_chunk}, ensure_ascii=False, separators=(',', ':'))}\n\n"
                                 
-                                # Small delay to simulate typing
                                 await asyncio.sleep(0.02)
                                 
-                                # Send heartbeat every 5 seconds to keep connection alive
                                 current_time = asyncio.get_event_loop().time()
                                 if current_time - last_heartbeat > 5:
                                     yield ": heartbeat\n\n"
@@ -292,7 +247,6 @@ async def chat_stream(request: ChatRequest):
                             
                             print(f"[STREAM] Document streaming complete")
                             
-                            # Send completion with metadata
                             final_result = {
                                 'title': title,
                                 'kind': doc_type,
@@ -303,17 +257,15 @@ async def chat_stream(request: ChatRequest):
                             }
                             
                             yield f"data: {json.dumps({'tool': 'create_document', 'action': 'complete', 'result': final_result}, ensure_ascii=False, separators=(',', ':'))}\n\n"
-                    except Exception as tool_error:
-                        import traceback
-                        print(f"[STREAM] Tool error: {tool_error}")
-                        traceback.print_exc()
-                        yield f"data: {json.dumps({'error': f'Tool execution failed: {str(tool_error)}'}, ensure_ascii=False, separators=(',', ':'))}\n\n"
+                        else:
+                            error_msg = result.get('error', 'Unknown error')
+                            print(f"[STREAM] Document generation error: {error_msg}")
+                            yield f"data: {json.dumps({'error': f'Document generation failed: {error_msg}'}, ensure_ascii=False, separators=(',', ':'))}\n\n"
             
             yield f"data: {json.dumps({'type': 'done'}, separators=(',', ':'))}\n\n"
             print(f"[STREAM] Stream completed successfully")
             
         except Exception as e:
-            import traceback
             print(f"[STREAM] ERROR: {str(e)}")
             traceback.print_exc()
             yield f"data: {{\"error\": \"{str(e)}\"}}\n\n"
@@ -323,7 +275,7 @@ async def chat_stream(request: ChatRequest):
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "X-Accel-Buffering": "no",  
             "Connection": "keep-alive",
         }
     )

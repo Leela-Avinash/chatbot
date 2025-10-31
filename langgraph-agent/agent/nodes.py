@@ -38,7 +38,6 @@ async def create_document(title: str, description: str, type: str = "text") -> d
     """
     return await mcp_client.create_document(title, description, type)
 
-# Initialize LLM
 def get_llm(streaming: bool = True):
     """Get the language model with streaming support"""
     return ChatGoogleGenerativeAI(
@@ -47,7 +46,6 @@ def get_llm(streaming: bool = True):
         streaming=streaming
     )
 
-# System prompt
 SYSTEM_PROMPT = """
 ============================================================
 AI BEHAVIOR MODE
@@ -172,32 +170,27 @@ async def agent_node(state: AgentState) -> Dict[str, Any]:
     messages = state.get("messages", [])
     user_input = state.get("user_input", "")
     
-    # Add system message if not present
     if not messages or not isinstance(messages[0], SystemMessage):
         messages = [SystemMessage(content=SYSTEM_PROMPT)] + messages
     
-    # Add user input as new message
     if user_input:
         messages.append(HumanMessage(content=user_input))
     
-    # Get LLM with tools
     llm = get_llm(streaming=True)
     tools = [get_weather, create_document]
     llm_with_tools = llm.bind_tools(tools)
     
-    # Call LLM - use ainvoke for now, streaming handled at graph level
     print(f"[AGENT] Calling LLM with {len(messages)} messages...")
     response = await llm_with_tools.ainvoke(messages)
     print(f"[AGENT] Got response. Has tool calls: {hasattr(response, 'tool_calls') and len(response.tool_calls) > 0}")
     
-    # Check if response has tool calls
     has_tool_calls = hasattr(response, 'tool_calls') and len(response.tool_calls) > 0
     
     return {
         "messages": messages + [response],
         "tool_calls": response.tool_calls if has_tool_calls else [],
         "should_continue": has_tool_calls,
-        "user_input": ""  # Clear user input after processing
+        "user_input": ""  
     }
 
 async def agent_node_streaming(state: AgentState):
@@ -207,27 +200,22 @@ async def agent_node_streaming(state: AgentState):
     messages = state.get("messages", [])
     user_input = state.get("user_input", "")
     
-    # Add system message if not present
     if not messages or not isinstance(messages[0], SystemMessage):
         messages = [SystemMessage(content=SYSTEM_PROMPT)] + messages
     
-    # Add user input as new message
     if user_input:
         messages.append(HumanMessage(content=user_input))
     
-    # Get LLM with tools
     llm = get_llm(streaming=True)
     tools = [get_weather, create_document]
     llm_with_tools = llm.bind_tools(tools)
     
     print(f"[AGENT_STREAM] Streaming LLM with {len(messages)} messages...")
     
-    # Stream the response
     full_content = ""
     response_message = None
     
     async for chunk in llm_with_tools.astream(messages):
-        # Yield the chunk for streaming
         if hasattr(chunk, 'content') and chunk.content:
             full_content += chunk.content
             yield {
@@ -235,15 +223,12 @@ async def agent_node_streaming(state: AgentState):
                 "content": chunk.content
             }
         
-        # Keep the last chunk as it has tool_calls
         response_message = chunk
     
-    # Check if response has tool calls
     has_tool_calls = hasattr(response_message, 'tool_calls') and len(response_message.tool_calls) > 0
     
     print(f"[AGENT_STREAM] Completed. Has tool calls: {has_tool_calls}")
     
-    # Return final state update
     yield {
         "type": "complete",
         "messages": messages + [response_message],
@@ -279,7 +264,6 @@ async def tool_node(state: AgentState) -> Dict[str, Any]:
             
             print(f"[TOOL] Result: {result}")
             
-            # Add tool message to messages
             messages.append(ToolMessage(
                 content=json.dumps(result),
                 tool_call_id=tool_id
@@ -301,7 +285,7 @@ async def tool_node(state: AgentState) -> Dict[str, Any]:
     return {
         "messages": messages,
         "tool_results": tool_results,
-        "tool_calls": [],  # Clear tool calls
+        "tool_calls": [],
         "should_continue": False
     }
 
@@ -317,11 +301,9 @@ async def document_generation_node(state: AgentState) -> Dict[str, Any]:
         if tool_result["tool"] == "create_document":
             result = tool_result["result"]
             
-            # Check if document was created successfully
             if result.get('error'):
                 continue
             
-            # Get document details from the result
             title = result.get("title", "Document")
             content = result.get("content", "")
             doc_type = result.get("type", "text")
@@ -337,7 +319,6 @@ async def document_generation_node(state: AgentState) -> Dict[str, Any]:
 
 def should_continue(state: AgentState) -> str:
     """Decide whether to continue to tools or end"""
-    # If we have tool calls to execute, go to tools
     if state.get("should_continue", False):
         print("[ROUTER] Routing to tools")
         return "tools"

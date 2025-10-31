@@ -5,14 +5,18 @@ Communicates via stdio (stdin/stdout) using JSON-RPC 2.0
 import asyncio
 import json
 import os
+import uuid
+import traceback
 from typing import Any
 from datetime import datetime
-import uuid
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 from dotenv import load_dotenv
+
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import HumanMessage
 
 # Load environment variables
 load_dotenv()
@@ -76,8 +80,6 @@ async def generate_document_content(title: str, doc_type: str, description: str)
     Returns:
         Generated content as string
     """
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    from langchain_core.messages import HumanMessage
     
     # Get API key from environment
     api_key = os.getenv("GOOGLE_API_KEY")
@@ -186,7 +188,6 @@ async def create_document(arguments: dict) -> list[TextContent]:
         )]
         
     except Exception as e:
-        import traceback
         print(f"[DOCUMENT_SERVER] Error: {str(e)}")
         traceback.print_exc()
         return [TextContent(

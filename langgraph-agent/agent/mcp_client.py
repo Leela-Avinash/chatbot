@@ -1,6 +1,8 @@
 import asyncio
 import os
 import sys
+import json
+import traceback
 from typing import Dict, Any, Optional
 
 from dotenv import load_dotenv
@@ -20,7 +22,6 @@ class MCPClient:
         self.sessions: Dict[str, ClientSession] = {}
         self.contexts: Dict[str, Any] = {}
 
-        # MCP servers are spawned as subprocesses (no HTTP)
         self.weather_server_path = os.getenv("MCP_WEATHER_CMD", "mcp_servers/weather_server.py")
         self.document_server_path = os.getenv("MCP_DOC_CMD", "mcp_servers/document_server.py")
 
@@ -32,7 +33,7 @@ class MCPClient:
         python_exec = sys.executable
         params = StdioServerParameters(
             command=python_exec,
-            args=[server_path]  # Just the path, not split
+            args=[server_path]  
         )
 
         context = stdio_client(params)
@@ -40,7 +41,6 @@ class MCPClient:
         session = ClientSession(read_stream, write_stream)
         await session.__aenter__()
         
-        # Initialize the MCP session
         await session.initialize()
         
         self.sessions[name] = session
@@ -91,7 +91,6 @@ class MCPClient:
 
             # Try parse JSON result
             try:
-                import json
                 parsed = json.loads(text)
                 print(f"[MCP] Parsed JSON: {parsed}")
                 return parsed
@@ -101,7 +100,6 @@ class MCPClient:
 
         except Exception as e:
             print(f"[MCP] Tool call failed: {e}")
-            import traceback
             traceback.print_exc()
             return {"error": str(e)}
 
@@ -128,6 +126,4 @@ class MCPClient:
         self.sessions.clear()
         self.contexts.clear()
 
-
-# Global instance
 mcp_client = MCPClient()
