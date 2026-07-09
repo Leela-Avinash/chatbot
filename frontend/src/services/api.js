@@ -53,15 +53,24 @@ export const chatApi = {
     },
 
     // Send message with streaming
-    sendMessage: async (chatId, message) => {
+    sendMessage: async (chatId, message, signal) => {
+        const token = localStorage.getItem("token");
+        const headers = { "Content-Type": "application/json" };
+        if (token) {
+            headers.Authorization = `Bearer ${token}`;
+        }
+
         const response = await fetch(`${API_URL}/api/chat/${chatId}/stream`, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${localStorage.getItem("token")}`,
-            },
+            headers,
             body: JSON.stringify({ message }),
+            signal,
         });
+
+        if (response.status === 401) {
+            localStorage.removeItem("token");
+            window.location.href = "/login";
+        }
 
         return response;
     },

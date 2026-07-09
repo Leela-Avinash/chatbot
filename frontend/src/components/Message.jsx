@@ -16,19 +16,6 @@ export const Message = ({ message, onDocumentClick }) => {
                       (!message.documents || message.documents.length === 0) &&
                       message.type === 'general';
 
-    // Debug logging for assistant messages
-    if (!isUser) {
-        console.log('📨 Message component received:', {
-            id: message.id,
-            type: message.type,
-            hasContent: !!message.content,
-            hasWeatherData: !!message.weatherData,
-            hasDocuments: !!message.documents,
-            documentsLength: message.documents?.length,
-            documents: message.documents
-        });
-    }
-
     return (
         <div className={`flex gap-4 p-4 ${isUser ? 'flex-row-reverse' : ''}`} style={{ backgroundColor: '#1f1f1f' }}>
             <div className="shrink-0">

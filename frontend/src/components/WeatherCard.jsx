@@ -21,18 +21,18 @@ export const WeatherCard = ({ data }) => {
         return null;
     }
 
-    console.log("WeatherCard data:", data);
-    console.log("Current weather data:", data.current);
-
-    const { 
-        cityName = 'Unknown', 
-        country = '', 
-        current = {}, 
-        current_units = {}, 
-        timezone = '', 
+    const {
+        cityName = 'Unknown',
+        country = '',
+        current: currentRaw = {},
+        current_units = {},
+        timezone = '',
         daily = {},
         hourly = {}
     } = data;
+
+    // Copy before any mutation below — currentRaw may be frozen Redux state
+    const current = { ...currentRaw };
 
     // Check if current has the required data
     if (!current || typeof current !== 'object' || current.temperature_2m === undefined) {

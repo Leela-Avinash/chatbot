@@ -11,6 +11,15 @@ from mcp import ClientSession, StdioServerParameters
 
 load_dotenv()
 
+# Per-tool call timeouts: weather is a couple of quick HTTP calls, while
+# document generation runs a full LLM completion (up to 8000 output tokens)
+# and legitimately needs much more time.
+DEFAULT_TOOL_CALL_TIMEOUT_SECONDS = 30
+TOOL_CALL_TIMEOUTS = {
+    "get_weather": 15,
+    "create_document": 120,
+}
+
 
 class MCPClient:
     """
@@ -22,8 +31,10 @@ class MCPClient:
         self.sessions: Dict[str, ClientSession] = {}
         self.contexts: Dict[str, Any] = {}
 
-        self.weather_server_path = os.getenv("MCP_WEATHER_CMD", "mcp_servers/weather_server.py")
-        self.document_server_path = os.getenv("MCP_DOC_CMD", "mcp_servers/document_server.py")
+        self.server_paths = {
+            "weather": os.getenv("MCP_WEATHER_CMD", "mcp_servers/weather_server.py"),
+            "document": os.getenv("MCP_DOC_CMD", "mcp_servers/document_server.py"),
+        }
 
     async def start_server(self, name: str, server_path: str):
         """
@@ -40,9 +51,16 @@ class MCPClient:
         read_stream, write_stream = await context.__aenter__()
         session = ClientSession(read_stream, write_stream)
         await session.__aenter__()
-        
-        await session.initialize()
-        
+
+        try:
+            await session.initialize()
+        except Exception:
+            # Handshake failed after the subprocess was already spawned —
+            # tear down what we opened instead of leaking the process.
+            await session.__aexit__(None, None, None)
+            await context.__aexit__(None, None, None)
+            raise
+
         self.sessions[name] = session
         self.contexts[name] = context
         print(f"[MCP] Started server: {name} (subprocess via stdio) - PID: {context._process.pid if hasattr(context, '_process') else 'unknown'}")
@@ -53,55 +71,82 @@ class MCPClient:
         No HTTP servers - pure stdio communication
         """
         try:
-            await self.start_server("weather", self.weather_server_path)
+            await self.start_server("weather", self.server_paths["weather"])
             print("[MCP] Weather server started successfully")
         except Exception as e:
             print(f"[MCP] Failed to start weather server: {e}")
-            
+
         try:
-            await self.start_server("document", self.document_server_path)
+            await self.start_server("document", self.server_paths["document"])
             print("[MCP] Document server started successfully")
         except Exception as e:
             print(f"[MCP] Failed to start document server: {e}")
 
+    async def _restart_server(self, server: str):
+        """Tear down and respawn a single MCP server (used after a dead/wedged session)."""
+        session = self.sessions.pop(server, None)
+        context = self.contexts.pop(server, None)
+        if session is not None:
+            try:
+                await session.__aexit__(None, None, None)
+            except Exception:
+                pass
+        if context is not None:
+            try:
+                await context.__aexit__(None, None, None)
+            except Exception:
+                pass
+
+        await self.start_server(server, self.server_paths[server])
+
+    async def _call_tool_once(self, session: ClientSession, tool: str, args: Dict[str, Any], timeout: float):
+        response = await asyncio.wait_for(
+            session.call_tool(tool, arguments=args),
+            timeout=timeout,
+        )
+        print(f"[MCP] Got response: {response}")
+
+        if not response or not response.content:
+            return {"error": "Empty MCP response"}
+
+        text = response.content[0].text
+
+        try:
+            return json.loads(text)
+        except Exception:
+            return {"result": text}
+
     async def call_tool(self, server: str, tool: str, args: Dict[str, Any]):
         """
-        Call an MCP tool via JSON-RPC
+        Call an MCP tool via JSON-RPC. If the session is dead or the call fails
+        with a transport-level error, restart that server once and retry.
         """
         session = self.sessions.get(server)
         if not session:
             return {"error": f"MCP server not running: {server}"}
 
+        if not isinstance(args, dict):
+            args = {"value": args}
+
+        timeout = TOOL_CALL_TIMEOUTS.get(tool, DEFAULT_TOOL_CALL_TIMEOUT_SECONDS)
+        print(f"[MCP] Calling tool {tool} on server {server} with args: {args}")
+
         try:
-            print(f"[MCP] Calling tool {tool} on server {server} with args: {args}")
-            print(f"[MCP] Args type: {type(args)}, Args value: {args}")
-            
-            # Ensure arguments are in the correct format
-            if not isinstance(args, dict):
-                args = {"value": args}
-            
-            response = await session.call_tool(tool, arguments=args)
-            print(f"[MCP] Got response from {server}: {response}")
-            
-            if not response or not response.content:
-                return {"error": "Empty MCP response"}
-
-            text = response.content[0].text
-            print(f"[MCP] Response text: {text}")
-
-            # Try parse JSON result
-            try:
-                parsed = json.loads(text)
-                print(f"[MCP] Parsed JSON: {parsed}")
-                return parsed
-            except Exception as parse_error:
-                print(f"[MCP] Failed to parse JSON: {parse_error}, returning as text")
-                return {"result": text}
-
+            return await self._call_tool_once(session, tool, args, timeout)
+        except asyncio.TimeoutError:
+            print(f"[MCP] Tool call to {server}.{tool} timed out after {timeout}s")
+            return {"error": f"Tool '{tool}' timed out"}
         except Exception as e:
-            print(f"[MCP] Tool call failed: {e}")
+            print(f"[MCP] Tool call to {server}.{tool} failed ({e}); restarting server and retrying once")
             traceback.print_exc()
-            return {"error": str(e)}
+            try:
+                await self._restart_server(server)
+                session = self.sessions[server]
+                return await self._call_tool_once(session, tool, args, timeout)
+            except Exception as retry_error:
+                print(f"[MCP] Retry after restart failed: {retry_error}")
+                traceback.print_exc()
+                return {"error": str(retry_error)}
 
     async def get_weather(self, city: str):
         return await self.call_tool("weather", "get_weather", {"city": city})
@@ -116,12 +161,18 @@ class MCPClient:
     async def close(self):
         print("[MCP] Shutting down MCP sessions...")
         for name, session in self.sessions.items():
-            await session.__aexit__(None, None, None)
-            print(f"[MCP] Closed session: {name}")
+            try:
+                await session.__aexit__(None, None, None)
+                print(f"[MCP] Closed session: {name}")
+            except Exception as e:
+                print(f"[MCP] Failed to close session {name}: {e}")
 
         for name, context in self.contexts.items():
-            await context.__aexit__(None, None, None)
-            print(f"[MCP] Stopped server: {name}")
+            try:
+                await context.__aexit__(None, None, None)
+                print(f"[MCP] Stopped server: {name}")
+            except Exception as e:
+                print(f"[MCP] Failed to stop server {name}: {e}")
 
         self.sessions.clear()
         self.contexts.clear()

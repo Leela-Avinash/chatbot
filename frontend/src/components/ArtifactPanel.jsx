@@ -38,24 +38,12 @@ export const ArtifactPanel = ({ artifact, onClose, streamingResponse }) => {
             else if (title.includes('jsx') || title.includes('.jsx')) setCodeLanguage('jsx');
             else setCodeLanguage('javascript');
         }
-    }, [artifact]);
+    }, [artifact?.type, artifact?.title]);
 
     // Early return must come AFTER all hooks
     if (!artifact) return null;
 
-    // Debug logging
-    console.log('ArtifactPanel artifact:', {
-        type: artifact.type,
-        kind: artifact.kind,
-        title: artifact.title,
-        contentLength: artifact.content?.length,
-        contentPreview: artifact.content?.substring(0, 200),
-        status: artifact.status,
-        codeLanguage: codeLanguage
-    });
-
     const handleSave = (content) => {
-        console.log('Saving artifact content:', content);
         // Update the artifact in Redux store
         dispatch(setCurrentArtifact({
             ...artifact,

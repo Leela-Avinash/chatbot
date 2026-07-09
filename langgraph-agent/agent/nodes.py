@@ -7,7 +7,13 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, Tool
 from langchain_core.tools import tool
 from agent.state import AgentState
 from agent.mcp_client import mcp_client
+import asyncio
 import json
+
+# Max seconds to wait for the *next* token from the LLM stream. Resets on
+# every chunk, so a long-but-actively-streaming response is unaffected — this
+# only guards against the provider hanging with no output at all.
+LLM_CHUNK_TIMEOUT_SECONDS = 30
 
 @tool
 async def get_weather(city: str) -> dict:
@@ -187,17 +193,30 @@ async def agent_node_streaming(state: AgentState) -> Dict[str, Any]:
     full_content = ""
     response_message = None
     
-    async for chunk in llm_with_tools.astream(messages):
+    llm_stream = llm_with_tools.astream(messages)
+    while True:
+        try:
+            chunk = await asyncio.wait_for(llm_stream.__anext__(), timeout=LLM_CHUNK_TIMEOUT_SECONDS)
+        except StopAsyncIteration:
+            break
+        except asyncio.TimeoutError:
+            print(f"[AGENT_STREAM] LLM produced no token for {LLM_CHUNK_TIMEOUT_SECONDS}s; stopping stream")
+            break
+
         if hasattr(chunk, 'content') and chunk.content:
             token = chunk.content
             full_content += token
             streaming_tokens.append(token)
         response_message = chunk
-    
+
+    if response_message is None:
+        print("[AGENT_STREAM] LLM stream yielded no chunks; substituting an empty AI message")
+        response_message = AIMessage(content="")
+
     has_tool_calls = hasattr(response_message, 'tool_calls') and len(response_message.tool_calls) > 0
-    
+
     print(f"[AGENT_STREAM] Completed. Content length: {len(full_content)}, Has tool calls: {has_tool_calls}")
-    
+
     return {
         "messages": messages + [response_message],
         "tool_calls": response_message.tool_calls if has_tool_calls else [],

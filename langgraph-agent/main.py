@@ -5,12 +5,12 @@ Fully uses LangGraph for orchestration - both streaming and non-streaming
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Dict, Optional, AsyncIterator
 import json
 import asyncio
 import traceback
-from agent.graph import streaming_agent_graph
+from agent.graph import streaming_agent_graph, GRAPH_RECURSION_LIMIT
 from agent.mcp_client import mcp_client
 import uvicorn
 
@@ -42,8 +42,11 @@ async def shutdown_event():
     await mcp_client.close()
     print("[Shutdown] MCP servers terminated")
 
+MAX_MESSAGE_LENGTH = 8000
+
+
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(..., min_length=1, max_length=MAX_MESSAGE_LENGTH)
     session_id: str
     user_id: Optional[str] = None
 
@@ -90,7 +93,10 @@ async def chat_stream(request: ChatRequest):
             final_state = None
             
             try:
-                async for event in streaming_agent_graph.astream(initial_state):
+                async for event in streaming_agent_graph.astream(
+                    initial_state,
+                    config={"recursion_limit": GRAPH_RECURSION_LIMIT},
+                ):
                     print(f"[STREAM] Graph event: {list(event.keys())}")
                     
                     if "agent" in event:
@@ -168,14 +174,15 @@ async def chat_stream(request: ChatRequest):
             except Exception as e:
                 print(f"[STREAM] Stream error: {str(e)}")
                 traceback.print_exc()
-            
+                yield f"data: {json.dumps({'type': 'error', 'error': 'The agent encountered an error while generating a response.'}, ensure_ascii=False, separators=(',', ':'))}\n\n"
+
             yield f"data: {json.dumps({'type': 'done'}, separators=(',', ':'))}\n\n"
             print(f"[STREAM] Stream completed successfully")
-            
+
         except Exception as e:
             print(f"[STREAM] ERROR: {str(e)}")
             traceback.print_exc()
-            yield f"data: {{\"error\": \"{str(e)}\"}}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'error': 'The agent encountered an unexpected error.'}, ensure_ascii=False, separators=(',', ':'))}\n\n"
     
     return StreamingResponse(
         generate(),

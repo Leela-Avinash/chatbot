@@ -73,10 +73,11 @@ async def get_weather(arguments: dict) -> list[TextContent]:
                 text="Error: city parameter is required"
             )]
         
-        geocoding_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=en&format=json"
-        
+        geocoding_url = "https://geocoding-api.open-meteo.com/v1/search"
+        geocoding_params = {"name": city, "count": 1, "language": "en", "format": "json"}
+
         async with httpx.AsyncClient() as client:
-            response = await client.get(geocoding_url)
+            response = await client.get(geocoding_url, params=geocoding_params)
             if response.status_code != 200:
                 return [TextContent(
                     type="text",
@@ -95,16 +96,17 @@ async def get_weather(arguments: dict) -> list[TextContent]:
             latitude = location["latitude"]
             longitude = location["longitude"]
             
-            weather_url = (
-                f"https://api.open-meteo.com/v1/forecast?"
-                f"latitude={latitude}&longitude={longitude}"
-                f"&current=temperature_2m,weather_code,wind_speed_10m,relative_humidity_2m"
-                f"&hourly=temperature_2m"
-                f"&daily=sunrise,sunset,temperature_2m_max,temperature_2m_min"
-                f"&timezone=auto"
-            )
-            
-            response = await client.get(weather_url, headers={"Accept": "application/json"})
+            weather_url = "https://api.open-meteo.com/v1/forecast"
+            weather_params = {
+                "latitude": latitude,
+                "longitude": longitude,
+                "current": "temperature_2m,weather_code,wind_speed_10m,relative_humidity_2m",
+                "hourly": "temperature_2m",
+                "daily": "sunrise,sunset,temperature_2m_max,temperature_2m_min",
+                "timezone": "auto",
+            }
+
+            response = await client.get(weather_url, params=weather_params, headers={"Accept": "application/json"})
             if response.status_code != 200:
                 return [TextContent(
                     type="text",

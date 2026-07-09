@@ -27,6 +27,7 @@ export const useStreamingText = (options = {}) => {
 
             let fullText = "";
             let fullDocumentContent = ""; // For document artifacts
+            let sseBuffer = "";
 
             try {
                 while (true) {
@@ -35,7 +36,9 @@ export const useStreamingText = (options = {}) => {
                     if (done) break;
 
                     const chunk = decoder.decode(value, { stream: true });
-                    const lines = chunk.split("\n");
+                    sseBuffer += chunk;
+                    const lines = sseBuffer.split("\n");
+                    sseBuffer = lines.pop();
 
                     for (const line of lines) {
                         if (line.startsWith("data: ")) {
@@ -60,6 +63,14 @@ export const useStreamingText = (options = {}) => {
                                         setStreamedText(fullText);
                                         onChunk?.(textContent);
                                     }
+                                }
+
+                                // Handle server-reported errors (e.g. LLM/tool failure mid-stream)
+                                if (data.type === "error") {
+                                    onError?.(Object.assign(
+                                        new Error(data.error || "The assistant encountered an error."),
+                                        { midStream: true }
+                                    ));
                                 }
 
                                 // Handle document streaming

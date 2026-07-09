@@ -1,0 +1,418 @@
+\documentclass[12pt, letterpaper]{article} % Updated font size to 12pt
+
+% Packages:
+\usepackage[
+    ignoreheadfoot, % set margins without considering header and footer
+    top=2 cm, % separation between body and page edge from the top
+    bottom=2 cm, % separation between body and page edge from the bottom
+    left=2 cm, % separation between body and page edge from the left
+    right=2 cm, % separation between body and page edge from the right
+    footskip=1.0 cm, % separation between body and footer
+    % showframe % for debugging 
+]{geometry} % for adjusting page geometry
+\usepackage{titlesec} % for customizing section titles
+\usepackage{tabularx} % for making tables with fixed width columns
+\usepackage{array} % tabularx requires this
+\usepackage[dvipsnames]{xcolor} % for coloring text
+\definecolor{primaryColor}{RGB}{0, 0, 0} % define primary color
+\definecolor{linkColor}{RGB}{0,102,204} % new modern link color
+\usepackage{enumitem} % for customizing lists
+\usepackage{fontawesome5} % for using icons
+\usepackage{amsmath} % for math
+\usepackage[
+    pdftitle={John Doe's CV},
+    pdfauthor={John Doe},
+    pdfcreator={LaTeX with RenderCV},
+    colorlinks=true,
+    urlcolor=linkColor % use our custom link color
+]{hyperref} % for links, metadata and bookmarks
+\usepackage[pscoord]{eso-pic} % for floating text on the page
+\usepackage{calc} % for calculating lengths
+\usepackage{bookmark} % for bookmarks
+\usepackage{lastpage} % for getting the total number of pages
+\usepackage{changepage} % for one column entries (adjustwidth environment)
+\usepackage{paracol} % for two and three column entries
+\usepackage{ifthen} % for conditional statements
+\usepackage{needspace} % for avoiding page brake right after the section title
+\usepackage{iftex} % check if engine is pdflatex, xetex or luatex
+
+% Ensure that generated pdf is machine readable/ATS parsable:
+\ifPDFTeX
+    \input{glyphtounicode}
+    \pdfgentounicode=1
+    \usepackage[T1]{fontenc}
+    \usepackage[utf8]{inputenc}
+    \usepackage{lmodern}
+\fi
+
+\usepackage{charter}
+
+% Some settings:
+\raggedright
+\AtBeginEnvironment{adjustwidth}{\partopsep0pt} % remove space before adjustwidth environment
+\pagestyle{empty} % no header or footer
+\setcounter{secnumdepth}{0} % no section numbering
+\setlength{\parindent}{0pt} % no indentation
+\setlength{\topskip}{0pt} % no top skip
+\setlength{\columnsep}{0.15cm} % set column separation
+\pagenumbering{gobble} % no page numbering
+
+\titleformat{\section}{\needspace{4\baselineskip}\bfseries\large}{}{0pt}{}[\vspace{1pt}\titlerule]
+
+\titlespacing{\section}{
+    % left space:
+    -1pt
+}{
+    % top space:
+    0.3 cm
+}{
+    % bottom space:
+    0.2 cm
+} % section title spacing
+
+\renewcommand\labelitemi{$\vcenter{\hbox{\small$\bullet$}}$} % custom bullet points
+\newenvironment{highlights}{
+    \begin{itemize}[
+        topsep=0.10 cm,
+        parsep=0.10 cm,
+        partopsep=0pt,
+        itemsep=0pt,
+        leftmargin=0 cm + 10pt
+    ]
+}{
+    \end{itemize}
+} % new environment for highlights
+
+\newenvironment{highlightsforbulletentries}{
+    \begin{itemize}[
+        topsep=0.10 cm,
+        parsep=0.10 cm,
+        partopsep=0pt,
+        itemsep=0pt,
+        leftmargin=10pt
+    ]
+}{
+    \end{itemize}
+} % new environment for highlights for bullet entries
+
+\newenvironment{onecolentry}{
+    \begin{adjustwidth}{
+        0 cm + 0.00001 cm
+    }{
+        0 cm + 0.00001 cm
+    }
+}{
+    \end{adjustwidth}
+} % new environment for one column entries
+
+\newenvironment{twocolentry}[2][]{
+    \onecolentry
+    \def\secondColumn{#2}
+    \setcolumnwidth{\fill, 4.5 cm}
+    \begin{paracol}{2}
+}{
+    \switchcolumn \raggedleft \secondColumn
+    \end{paracol}
+    \endonecolentry
+} % new environment for two column entries
+
+\newenvironment{threecolentry}[3][]{
+    \onecolentry
+    \def\thirdColumn{#3}
+    \setcolumnwidth{, \fill, 4.5 cm}
+    \begin{paracol}{3}
+    {\raggedright #2} \switchcolumn
+}{
+    \switchcolumn \raggedleft \thirdColumn
+    \end{paracol}
+    \endonecolentry
+} % new environment for three column entries
+
+% Updated header with line height set to 1.0
+\newenvironment{header}{
+    \setlength{\topsep}{0pt}\par\kern\topsep\centering\linespread{1.0}
+}{
+    \par\kern\topsep
+} % new environment for the header
+
+\newcommand{\placelastupdatedtext}{% \placetextbox{<horizontal pos>}{<vertical pos>}{<stuff>}
+  \AddToShipoutPictureFG*{% Add <stuff> to current page foreground
+    \put(
+        \LenToUnit{\paperwidth-2 cm-0 cm+0.05cm},
+        \LenToUnit{\paperheight-1.0 cm}
+    ){\vtop{{\null}\makebox[0pt][c]{
+        \small\color{gray}\textit{Last updated in September 2024}\hspace{\widthof{Last updated in September 2024}}
+    }}}%
+  }%
+}%
+
+% save the original href command in a new command:
+\let\hrefWithoutArrow\href
+
+% New command for styled external links:
+\newcommand{\styledlink}[2]{\href{#1}{\textbf{\underline{\textcolor{linkColor}{#2}}}}}
+
+\begin{document}
+    \newcommand{\AND}{\unskip
+        \cleaders\copy\ANDbox\hskip\wd\ANDbox
+        \ignorespaces
+    }
+    \newsavebox\ANDbox
+    \sbox\ANDbox{$|$}
+
+   \begin{header}
+    \fontsize{25 pt}{25 pt}\selectfont Leela Avinash Badam
+
+    \vspace{5 pt}
+
+    \normalsize
+    % \mbox{Your Location}%
+    % \kern 5.0 pt%
+    % \AND%
+    \kern 5.0 pt%
+    \mbox{\styledlink{mailto:leelaavinash24@gmail.com}{leelaavinash24@gmail.com}}%
+    \kern 5.0 pt%
+    \AND%
+    \kern 5.0 pt%
+    \mbox{\styledlink{tel:+918074947204}{+91 8074947204}}%
+    \kern 5.0 pt%
+    \AND%
+    \kern 5.0 pt%
+    \mbox{\styledlink{https://www.linkedin.com/in/leela-avinash-badam/}{linkedIn}}%
+    \kern 5.0 pt%
+    \AND%
+    \kern 5.0 pt%
+    \mbox{\styledlink{https://github.com/Leela-Avinash}{github}}%
+\end{header}
+
+
+    \vspace{5 pt - 0.3 cm}
+
+
+    \section{Summary}
+
+
+
+        
+        \begin{onecolentry}
+Full-stack software engineer with production experience in React, Node.js, Python, and MongoDB. Built real-time GPS tracking systems, employee monitoring dashboards, and AI chatbots. Expertise in MERN stack, FastAPI, WebSocket integration, RESTful APIs. Delivered features that increased user engagement by 150\% achieving 40\%faster load times and handled 678K+ monthly requests with 267GB of data.        \end{onecolentry}
+
+        \vspace{0.2 cm}
+
+        % \begin{onecolentry}
+        %     The boilerplate content was inspired by \href{https://github.com/dnl-blkv/mcdowell-cv}{Gayle McDowell}.
+        % \end{onecolentry}
+
+
+    
+    % \section{Quick Guide}
+
+    % \begin{onecolentry}
+    %     \begin{highlightsforbulletentries}
+
+
+    %     \item Each section title is arbitrary and each section contains a list of entries.
+
+    %     \item There are 7 unique entry types: \textit{BulletEntry}, \textit{TextEntry}, \textit{EducationEntry}, \textit{ExperienceEntry}, \textit{NormalEntry}, \textit{PublicationEntry}, and \textit{OneLineEntry}.
+
+    %     \item Select a section title, pick an entry type, and start writing your section!
+
+    %     \item \href{https://docs.rendercv.com/user_guide/}{Here}, you can find a comprehensive user guide for RenderCV.
+
+
+    %     \end{highlightsforbulletentries}
+    % \end{onecolentry}
+
+    \section{Education}
+
+
+
+        
+        \begin{twocolentry}{
+            Nov 2022 - Aug 2026
+        }
+            \textbf{JNTU-GV}, BTech in Computer Science\end{twocolentry}
+
+        \vspace{0.10 cm}
+        \begin{onecolentry}
+    \begin{highlights}
+        \item CGPA: 8.31/10.0
+    \end{highlights}
+\end{onecolentry}
+
+
+
+
+    
+  \section{Experience}
+
+  \begin{twocolentry}{Apr 2025 -- Present}
+    \textbf{SDE}, CuBIT Dynamics — Remote
+\end{twocolentry}
+\vspace{0.10 cm}
+\begin{onecolentry}
+    \begin{highlights}
+    \item Engineered \textbf{TraceLink}, a vehicle tracking system with real-time WebSocket maps, geofence alerts, and location history supporting 100+ trackers.
+    \item Created \textbf{LEXIS}, a smart library management system with \textbf{AI-enhanced keyword matching search} using Gemini API that finds books by description, storyline, theme, or author with MongoDB aggregation pipelines and dynamic relevance scoring.
+        \item Built \textbf{CubiView}, an employee monitoring app tracking tab activity across 50+ devices with automated weekly PDF reporting and productivity analytics dashboard.
+        \item Developed an Electron-based WhatsApp automation application using Selenium and Python, processing 1,000+ messages daily with media attachments and real-time analytics frontend.
+    \end{highlights}
+\end{onecolentry}
+
+
+\vspace{0.2 cm}
+\begin{twocolentry}{Nov 2024 -- Feb 2025}
+    \textbf{AIML Intern}, Infosys Springboard -- Remote
+\end{twocolentry}
+\vspace{0.10 cm}
+\begin{onecolentry}
+    \begin{highlights}
+        \item Developed an AI-powered sales negotiation prototype achieving real-time responses under 30 seconds using Google Gemini 2.0 Flash API.
+        \item Implemented sentiment analysis, intent detection, and tone adaptation with Gemini 2.0 Flash, reducing negotiation cycle time by 40\%.
+        \item Built post-call insight generation modules using advanced prompt engineering techniques, extracting key sentiments, buyer objections, and actionable recommendations from call transcripts.
+    \end{highlights}
+    \textbf{Repository:} \href{https://github.com/Leela-Avinash/Infosys}{GitHub Repository}
+\end{onecolentry}
+
+
+\vspace{0.2 cm}
+    
+    % \section{Publications}
+
+
+
+        
+    %     \begin{samepage}
+    %         \begin{twocolentry}{
+    %             Jan 2004
+    %         }
+    %             \textbf{3D Finite Element Analysis of No-Insulation Coils}
+    %         \end{twocolentry}
+
+    %         \vspace{0.10 cm}
+            
+    %         \begin{onecolentry}
+    %             \mbox{Frodo Baggins}, \mbox{\textbf{\textit{John Doe}}}, \mbox{Samwise Gamgee}
+
+    %             \vspace{0.10 cm}
+                
+    %     \href{https://doi.org/10.1109/TASC.2023.3340648}{10.1109/TASC.2023.3340648}
+    %     \end{onecolentry}
+    %     \end{samepage}
+
+
+    
+ \section{Projects}
+\begin{twocolentry}{\href{http://cresence2k25.com}{cresence2k25.com}}
+    \textbf{Cresence2k25 Website (JNTU-GV College Fest)}
+\end{twocolentry}
+\vspace{0.10 cm}
+\begin{onecolentry}
+    \begin{highlights}
+        \item Led a team to build a responsive React-based event website, increasing registrations by 150\%.
+        \item Optimized performance achieving 40\% faster load times through image compression, lazy loading, and code minification.
+        \item Reached 5K+ unique visitors monthly with 1,500 peak daily users (verified via Google Analytics).
+    \end{highlights}
+\end{onecolentry}
+\vspace{0.50 cm}
+\begin{twocolentry}{\href{https://github.com/Leela-Avinash/SIH1633}{Github Repo}}
+   \textbf{Alumni Connect} \textbf{(SIH 2024 Team Project)}
+\end{twocolentry}
+\vspace{0.10 cm}
+\begin{onecolentry}
+    \begin{highlights}
+        \item Built a \textbf{cosine similarity-based recommendation algorithm} that connects students and alumni based on college, skills, and mutual interests.
+        \item Integrated \textbf{Gemini API with fuzzy matching} for automated document field extraction and verification against user-provided data.
+        \item Designed a real-time matching engine delivering personalized mentorship suggestions and alumni connection recommendations.
+    \end{highlights}
+\end{onecolentry}
+
+
+\vspace{0.2cm}
+
+\begin{twocolentry}{\href{https://devastra.jntugvcev.in}{devastra.jntugvcev.in}}
+    \textbf{DevAstra Website (Student Software Development Club)}
+\end{twocolentry}
+\vspace{0.10 cm}
+\begin{onecolentry}
+    \begin{highlights}
+        \item Built a full-stack event management platform (React + Node.js + MongoDB) handling 100+ registrations, session tracking, and automated attendance for 100+ members.
+        \item Implemented a secure quiz platform with tab-switching detection, copy-paste prevention, auto-submit timers, and instant result generation.
+        \item Optimized SEO achieving 500+ Google Search impressions in the first week, growing active community participation to 100+ students.
+    \end{highlights}
+\end{onecolentry}
+
+\vspace{0.2cm}
+
+\begin{twocolentry}{\href{https://chatbot-la.vercel.app}{chatbot-la.vercel.app}}
+    \textbf{AI Chatbot with Real-Time Streaming \& Document Generation}
+\end{twocolentry}
+\vspace{0.10 cm}
+\begin{onecolentry}
+    \begin{highlights}
+        \item Engineered a full-stack AI chatbot using LangGraph agent orchestration with Google Gemini 2.0 Flash, Model Context Protocol (MCP) for dynamic tool invocation, and Server-Sent Events (SSE) for real-time streaming responses.
+        \item Architected microservices deployment with React + Redux Toolkit frontend, Node.js/Express backend with JWT authentication, MongoDB Atlas persistence, and Python FastAPI agent—deployed on Vercel and Railway.
+    \end{highlights}
+\end{onecolentry}
+
+  
+\section{Skills and Competencies}
+
+\begin{onecolentry}
+    \textbf{Languages:} JavaScript, Python, C, C++, HTML, CSS
+\end{onecolentry}
+
+\vspace{0.2 cm}
+
+\begin{onecolentry}
+    \textbf{Technologies \& Frameworks:} MERN Stack (MongoDB, Express.js, React.js, Node.js), Redux Toolkit, JWT Authentication, RESTful APIs, WebSocket, Server-Sent Events (SSE), FastAPI, Flask, LangGraph, Selenium, Electron, Three.js
+\end{onecolentry}
+
+\vspace{0.2 cm}
+
+\begin{onecolentry}
+    \textbf{Cloud \& Deployment:} Vercel, MongoDB Atlas, Railway, Docker, NGINX, PM2
+\end{onecolentry}
+
+\vspace{0.2 cm}
+
+\begin{onecolentry}
+    \textbf{DevOps \& Tools:} Git, GitHub, Postman, VS Code, ngrok
+\end{onecolentry}
+
+\vspace{0.2 cm}
+
+\begin{onecolentry}
+    \textbf{AI \& ML:} Large Language Models (LLMs), Prompt Engineering, Model Context Protocol (MCP), Google Gemini API, Sentiment Analysis, NLP, TensorFlow, PyTorch
+\end{onecolentry}
+
+\vspace{0.2 cm}
+
+\begin{onecolentry}
+    \textbf{Core CS Skills:} Data Structures and Algorithms, Operating Systems, Object-Oriented Programming, MongoDB Aggregation Pipelines
+\end{onecolentry}
+
+
+\section{Achievements}
+\begin{onecolentry}
+    \textbf{WebCraft (Web Development Workshop)}
+\end{onecolentry}
+\vspace{0.10 cm}
+\begin{onecolentry}
+    \begin{highlights}
+        \item Awarded the \textbf{Resource Person Certificate} for serving as a resource person in the college Web Development Workshop, where I shared frontend development expertise and contributed to enhancing the technical skills of \textbf{50+} students.
+    \end{highlights}
+\end{onecolentry}
+\vspace{0.10 cm}
+\begin{onecolentry}
+    \textbf{Vice President, DevAstra (Student Software Development Club)}
+\end{onecolentry}
+\vspace{0.10 cm}
+\begin{onecolentry}
+    \begin{highlights}
+        \item Guided and contributed to \textbf{DevAstra} (devastra.jntugvcev.in), a student software development club website managing event registrations, sessions, tasks, attendance tracking, quizzes with anti-cheating mechanisms, and auto-submissions.
+    \end{highlights}
+\end{onecolentry}
+
+    
+\end{document}

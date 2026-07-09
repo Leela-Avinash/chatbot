@@ -33,7 +33,12 @@ def create_streaming_agent_graph():
     )
     
     workflow.add_edge("tools", "agent")
-    
+
     return workflow.compile()
+
+# Bound how many agent<->tools round trips a single request can take, so a
+# non-converging tool-call loop raises a clear GraphRecursionError instead of
+# running unbounded.
+GRAPH_RECURSION_LIMIT = 15
 
 streaming_agent_graph = create_streaming_agent_graph()

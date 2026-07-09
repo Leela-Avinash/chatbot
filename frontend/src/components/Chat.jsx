@@ -33,6 +33,14 @@ export const Chat = () => {
     const [isLoadingChat, setIsLoadingChat] = useState(false);
     const messagesEndRef = useRef(null);
     const messagesCache = useRef({});  // Cache for loaded messages
+    const streamAbortRef = useRef(null);
+
+    const abortActiveStream = () => {
+        if (streamAbortRef.current) {
+            streamAbortRef.current.abort();
+            streamAbortRef.current = null;
+        }
+    };
 
     // Streaming hook for text and tool processing
     const { processStream } = useStreamingText({
@@ -97,6 +105,9 @@ export const Chat = () => {
         },
         onError: (error) => {
             console.error('Streaming error:', error);
+            if (error?.midStream) {
+                dispatch(updateLastMessage('\n\n_The assistant encountered an error while responding._'));
+            }
             dispatch(setIsStreaming(false));
         }
     });
@@ -201,7 +212,9 @@ export const Chat = () => {
 
     const handleSelectChat = async (chatId) => {
         if (chatId === currentChatId) return; // Already selected
-        
+
+        abortActiveStream();
+        dispatch(setIsStreaming(false));
         setCurrentChatId(chatId);
         dispatch(setCurrentArtifact(null));
         await loadChatMessages(chatId);
@@ -221,6 +234,8 @@ export const Chat = () => {
     };
 
     const handleNewChat = async () => {
+        abortActiveStream();
+        dispatch(setIsStreaming(false));
         try {
             const newChat = await chatApi.createChat('New Chat');
             setCurrentChatId(newChat._id);
@@ -243,6 +258,11 @@ export const Chat = () => {
     const confirmDeleteChat = async () => {
         const chatId = chatToDelete;
         if (!chatId) return;
+
+        if (chatId === currentChatId) {
+            abortActiveStream();
+            dispatch(setIsStreaming(false));
+        }
 
         try {
             await chatApi.deleteChat(chatId);
@@ -349,8 +369,11 @@ export const Chat = () => {
 
         dispatch(setIsStreaming(true));
 
+        const abortController = new AbortController();
+        streamAbortRef.current = abortController;
+
         try {
-            const response = await chatApi.sendMessage(chatId, content);
+            const response = await chatApi.sendMessage(chatId, content, abortController.signal);
 
             if (!response.ok) {
                 throw new Error('HTTP error! status: ' + response.status);
@@ -360,9 +383,17 @@ export const Chat = () => {
             await processStream(response);
 
         } catch (error) {
-            console.error('Chat error:', error);
-            dispatch(updateLastMessage('\n\nSorry, an error occurred.'));
-            dispatch(setIsStreaming(false));
+            if (error.name === 'AbortError') {
+                // Stream was intentionally cancelled (chat switched/deleted/new chat started)
+            } else {
+                console.error('Chat error:', error);
+                dispatch(updateLastMessage('\n\nSorry, an error occurred.'));
+                dispatch(setIsStreaming(false));
+            }
+        } finally {
+            if (streamAbortRef.current === abortController) {
+                streamAbortRef.current = null;
+            }
         }
 
         // Invalidate cache for current chat since new messages were added

@@ -12,7 +12,7 @@ export async function authMiddleware(req, res, next) {
             });
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'chatgpt_clone_secret_key');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
         const user = await User.findById(decoded.userId).select("-password");
 
@@ -32,11 +32,13 @@ export async function authMiddleware(req, res, next) {
         };
         next();
     } catch (error) {
-        console.error("Auth middleware error:", error);
+        // Expired/malformed/invalid-signature tokens are routine client-side
+        // conditions (stale localStorage, expired session), not server bugs —
+        // log a short line instead of a full stack trace.
+        console.warn(`Auth middleware rejected token: ${error.name}: ${error.message}`);
         res.status(401).json({
             success: false,
             message: "Token is not valid",
-            error: error.message,
         });
     }
 }

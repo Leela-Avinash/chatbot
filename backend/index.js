@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
+import mongoose from 'mongoose';
 import { connectDatabase } from './config/database.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
@@ -10,6 +11,11 @@ import chatRoutes from './routes/chatRoutes.js';
 import documentRoutes from './routes/documentRoutes.js';
 
 dotenv.config();
+
+if (!process.env.JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET environment variable is not set. Refusing to start with an insecure fallback secret.');
+  process.exit(1);
+}
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -22,11 +28,25 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+const DB_STATE_NAMES = {
+  0: 'disconnected',
+  1: 'connected',
+  2: 'connecting',
+  3: 'disconnecting',
+};
+
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  const dbState = mongoose.connection.readyState;
+  const dbConnected = dbState === 1;
+
+  res.status(dbConnected ? 200 : 503).json({
+    status: dbConnected ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    database: {
+      status: DB_STATE_NAMES[dbState] || 'unknown',
+      connected: dbConnected,
+    },
   });
 });
 
@@ -52,7 +72,7 @@ async function startServer() {
       console.log(`Health check: http://localhost:${PORT}/health`);
       console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`\n🔐 JWT Configuration:`);
-      console.log(`   Secret: ${process.env.JWT_SECRET ? '✓ Set' : '✗ Not set (using fallback)'}`);
+      console.log(`   Secret: ✓ Set`);
       console.log(`   Expires: ${process.env.JWT_EXPIRES_IN || '15d'}`);
       console.log(`\n📝 API Endpoints:`);
       console.log(`   POST /api/auth/register - Register new user`);

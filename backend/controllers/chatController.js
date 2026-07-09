@@ -55,16 +55,20 @@ export const streamMessage = async (req, res, next) => {
   try {
     const { message } = req.body;
     const chatId = req.params.id;
-    
+
+    if (typeof message !== 'string' || message.trim().length === 0) {
+      return res.status(400).json({ error: 'message is required and must be a non-empty string' });
+    }
+
     const chat = await Chat.findOne({
       _id: chatId,
       userId: req.user.id,
     });
-    
+
     if (!chat) {
       return res.status(404).json({ error: 'Chat not found' });
     }
-    
+
     const userMessage = {
       id: Date.now().toString(),
       role: 'user',
@@ -106,18 +110,30 @@ export const streamMessage = async (req, res, next) => {
         },
         {
           responseType: 'stream',
+          timeout: 60000,
         }
       );
-      
+
       console.log('✓ Connected to LangGraph stream');
-      
+
+      req.on('close', () => {
+        if (!langGraphResponse.data.destroyed) {
+          langGraphResponse.data.destroy();
+        }
+      });
+
+      let sseBuffer = '';
+
       langGraphResponse.data.on('data', (chunk) => {
         const chunkStr = chunk.toString();
-        
+
         res.write(chunkStr);
         res.flush && res.flush();
-        
-        const lines = chunkStr.split('\n');
+
+        sseBuffer += chunkStr;
+        const lines = sseBuffer.split('\n');
+        sseBuffer = lines.pop();
+
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
@@ -361,7 +377,7 @@ export const deleteChat = async (req, res, next) => {
     }
     
     // Delete the chat
-    await Chat.findByIdAndDelete(req.params.id);
+    await Chat.findOneAndDelete({ _id: req.params.id, userId: req.user.id });
     
     res.json({ success: true, message: 'Chat and associated documents deleted' });
   } catch (error) {

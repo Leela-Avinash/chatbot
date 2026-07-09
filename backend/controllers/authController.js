@@ -1,23 +1,20 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
+function isNonEmptyString(value) {
+    return typeof value === "string" && value.length > 0;
+}
+
 export async function register(req, res) {
     try {
         const { email, username, password } = req.body;
 
-        if (!email || !username || !password) {
+        if (!isNonEmptyString(email) || !isNonEmptyString(username) || !isNonEmptyString(password)) {
             return res.status(400).json({
                 success: false,
                 message: "Please provide all required fields",
             });
         }
-
-        // if (password.length < 6) {
-        //     return res.status(400).json({
-        //         success: false,
-        //         message: "Password must be at least 6 characters",
-        //     });
-        // }
 
         // Check if user already exists
         const existingUser = await User.findOne({
@@ -34,7 +31,7 @@ export async function register(req, res) {
 
         const token = jwt.sign(
             { userId: user._id, email: user.email },
-            process.env.JWT_SECRET || 'chatgpt_clone_secret_key',
+            process.env.JWT_SECRET,
             { expiresIn: process.env.JWT_EXPIRES_IN || "15d" }
         );
 
@@ -53,7 +50,6 @@ export async function register(req, res) {
         res.status(500).json({
             success: false,
             message: "Error registering user",
-            error: error.message,
         });
     }
 }
@@ -62,7 +58,7 @@ export async function login(req, res) {
     try {
         const { email, password } = req.body;
 
-        if (!email || !password) {
+        if (!isNonEmptyString(email) || !isNonEmptyString(password)) {
             return res.status(400).json({
                 success: false,
                 message: "Please provide email and password",
@@ -87,7 +83,7 @@ export async function login(req, res) {
 
         const token = jwt.sign(
             { userId: user._id, email: user.email },
-            process.env.JWT_SECRET || 'chatgpt_clone_secret_key',
+            process.env.JWT_SECRET,
             { expiresIn: process.env.JWT_EXPIRES_IN || "15d" }
         );
 
@@ -106,7 +102,6 @@ export async function login(req, res) {
         res.status(500).json({
             success: false,
             message: "Error logging in",
-            error: error.message,
         });
     }
 }
@@ -127,7 +122,6 @@ export async function getMe(req, res) {
         res.status(500).json({
             success: false,
             message: "Error fetching user data",
-            error: error.message,
         });
     }
 }

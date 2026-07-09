@@ -46,13 +46,13 @@ export const Sidebar = ({
 
     const getDocumentsFromChat = (chat) => {
         if (!chat.messages) return [];
-        
+
         const documents = [];
         chat.messages.forEach(message => {
-            if (message.metadata?.artifacts) {
-                message.metadata.artifacts.forEach(artifact => {
+            if (message.documents?.length) {
+                message.documents.forEach(document => {
                     documents.push({
-                        ...artifact,
+                        ...document,
                         messageId: message.id
                     });
                 });

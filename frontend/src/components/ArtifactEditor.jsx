@@ -1,13 +1,28 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 export const ArtifactEditor = ({ artifact, onSave, onContentChange }) => {
   const [content, setContent] = useState(artifact.content);
-  
+  const userEditedRef = useRef(false);
+  const lastTitleRef = useRef(artifact.title);
+
   useEffect(() => {
-    setContent(artifact.content);
-  }, [artifact.content]);
-  
+    // A different artifact was opened — always take its content.
+    if (artifact.title !== lastTitleRef.current) {
+      lastTitleRef.current = artifact.title;
+      userEditedRef.current = false;
+      setContent(artifact.content);
+      return;
+    }
+    // Same artifact: only sync from the (possibly still-streaming) prop
+    // until the user starts typing, so their edits aren't overwritten
+    // by incoming stream chunks.
+    if (!userEditedRef.current) {
+      setContent(artifact.content);
+    }
+  }, [artifact.content, artifact.title]);
+
   const handleChange = (e) => {
+    userEditedRef.current = true;
     const newContent = e.target.value;
     setContent(newContent);
     // Immediately update parent component
